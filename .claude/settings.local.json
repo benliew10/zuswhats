@@ -9,7 +9,10 @@
       "Bash(killall:*)",
       "Bash(cat:*)",
       "Bash(node authorize.js:*)",
-      "Bash(npm start)"
+      "Bash(npm start)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
