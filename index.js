@@ -232,14 +232,27 @@ class WhatsAppBot {
   async handlePollResponse(message, phoneNumber) {
     try {
       const pollUpdate = message.message.pollUpdateMessage;
-      const votes = pollUpdate.vote || [];
 
-      if (votes.length === 0) return;
+      // Debug: Log the full poll update structure
+      console.log('📊 Raw poll update:', JSON.stringify(pollUpdate, null, 2));
 
-      const selectedIndex = votes[0];
+      // Try different ways to get the vote
+      const votes = pollUpdate.vote || pollUpdate.votes || [];
+
+      if (!votes || votes.length === 0) {
+        console.log('⚠️ No votes found in poll update');
+        return;
+      }
+
+      const selectedIndex = Array.isArray(votes) ? votes[0] : votes;
       const serviceNames = Object.keys(SERVICES);
       const selectedServiceName = serviceNames[selectedIndex];
       const selectedService = SERVICES[selectedServiceName];
+
+      if (!selectedService) {
+        console.log(`❌ Could not find service at index ${selectedIndex}`);
+        return;
+      }
 
       console.log(`📊 Poll response: ${selectedServiceName} (index: ${selectedIndex})`);
 
