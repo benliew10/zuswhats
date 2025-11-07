@@ -348,7 +348,8 @@ After payment please send your FULL NAME for verification purpose
       const country = parseInt(process.env.SMS_ACTIVATE_COUNTRY) || 0;
       const selectedService = currentState.selectedService;
       const serviceCode = selectedService.code;
-      const operator = process.env.SMS_ACTIVATE_OPERATOR || null;
+      // Don't use operator filter to get more available numbers
+      const operator = null;
 
       console.log(`📱 Getting number for ${selectedService.name} (code: ${serviceCode})`);
 
