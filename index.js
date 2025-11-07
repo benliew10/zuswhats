@@ -257,8 +257,15 @@ Example: Name-MOHAMMAD ALI
 
             // Send payment image if it exists
             if (existsSync(this.paymentImagePath)) {
-              const media = MessageMedia.fromFilePath(this.paymentImagePath);
-              await message.reply(media);
+              try {
+                const media = MessageMedia.fromFilePath(this.paymentImagePath);
+                // Use client.sendMessage instead of message.reply for media
+                await this.client.sendMessage(message.from, media);
+                console.log('✅ Payment image sent successfully');
+              } catch (error) {
+                console.error('❌ Error sending payment image:', error.message);
+                await message.reply('Payment QR code image could not be loaded. Please contact support.');
+              }
             }
 
             this.conversationState.setState(phoneNumber, { step: 'waiting_for_payment' });
