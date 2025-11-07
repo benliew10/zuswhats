@@ -41,7 +41,13 @@ class SMSActivate {
       console.log(`📱 SMS Activate API Request: country=${country}, service=${service}, operator=${operator}`);
       console.log(`📱 Full API URL: ${this.baseUrl}?${new URLSearchParams(params).toString()}`);
 
-      const response = await axios.get(this.baseUrl, { params });
+      const response = await axios.get(this.baseUrl, {
+        params,
+        responseType: 'text',
+        headers: {
+          'Accept': 'text/plain'
+        }
+      });
 
       console.log(`📱 Response status: ${response.status}`);
       console.log(`📱 Response headers:`, response.headers);
