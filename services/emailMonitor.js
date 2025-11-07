@@ -155,6 +155,10 @@ class EmailMonitor {
       });
 
       if (!response.data.messages || response.data.messages.length === 0) {
+        // Log periodically to show monitoring is active
+        if (Math.random() < 0.01) { // Log ~1% of checks
+          console.log('📧 Email check: No new unread emails from payment sender');
+        }
         return null;
       }
 
@@ -163,8 +167,11 @@ class EmailMonitor {
 
       // Check if already processed
       if (this.processedEmails.has(messageId)) {
+        console.log('📧 Email found but already processed:', messageId);
         return null;
       }
+
+      console.log('🆕 NEW unread payment email found! Processing...');
 
       const message = await this.gmail.users.messages.get({
         userId: 'me',

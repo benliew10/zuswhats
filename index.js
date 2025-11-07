@@ -174,6 +174,26 @@ class WhatsAppBot {
           break;
 
         case 'waiting_for_payment':
+          // Check if customer is selecting a different service from the list
+          if (interactiveId && SERVICE_ID_MAP[interactiveId]) {
+            const newServiceName = SERVICE_ID_MAP[interactiveId];
+            console.log(`🔄 Customer changing service to: ${newServiceName}`);
+
+            const newService = SERVICES[newServiceName];
+            const currentState = this.conversationState.getState(phoneNumber);
+
+            // Delete old order message if exists
+            if (currentState.orderMessageId) {
+              console.log(`🗑️ Deleting old order message: ${currentState.orderMessageId}`);
+              await this.whatsappAPI.deleteMessage(phoneNumber, currentState.orderMessageId);
+            }
+
+            // Send new order details
+            await this.sendOrderDetails(phoneNumber, newService);
+            break;
+          }
+
+          // Otherwise, treat as name entry
           const enteredName = messageBody.trim();
           console.log(`👤 Customer entered name: "${enteredName}"`);
 
