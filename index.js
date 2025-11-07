@@ -41,6 +41,7 @@ class WhatsAppBot {
     this.paymentNames = [];
     this.pendingNames = new Map(); // Store names temporarily before email arrives
     this.processedMessages = new Set(); // Track processed message IDs to avoid duplicates
+    this.pollMessages = new Map(); // Store poll messages for vote decryption
   }
 
   async connectToWhatsApp() {
@@ -159,6 +160,9 @@ class WhatsAppBot {
               }
             });
 
+            // Store the full poll message for vote decryption
+            this.pollMessages.set(pollMessage.key.id, pollMessage);
+
             // Store poll message key for later reference
             this.conversationState.setState(phoneNumber, {
               step: 'awaiting_service_selection',
@@ -264,16 +268,16 @@ class WhatsAppBot {
         return;
       }
 
-      // Get the original poll message to decrypt votes
+      // Get the original poll message from our store
       const pollCreationMessageKey = pollUpdate.pollCreationMessageKey;
-
-      // Load the poll message from the store
-      const pollMessage = await this.sock.loadMessage(pollCreationMessageKey.remoteJid, pollCreationMessageKey.id);
+      const pollMessage = this.pollMessages.get(pollCreationMessageKey.id);
 
       if (!pollMessage) {
-        console.log('❌ Could not load poll message');
+        console.log('❌ Could not find stored poll message');
         return;
       }
+
+      console.log(`   Found stored poll message with ID: ${pollCreationMessageKey.id}`);
 
       // Decrypt the votes using Baileys' built-in function
       const pollVotes = await getAggregateVotesInPollMessage({
@@ -314,6 +318,10 @@ class WhatsAppBot {
           const selectedService = SERVICES[selectedServiceName];
 
           console.log(`✅ User selected: ${selectedServiceName}`);
+
+          // Clean up the poll message from storage
+          this.pollMessages.delete(pollCreationMessageKey.id);
+
           await this.sendOrderDetails(phoneNumber, selectedService);
           return;
         }
