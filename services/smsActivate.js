@@ -38,10 +38,13 @@ class SMSActivate {
         console.log(`📱 Requesting number with operator filter: ${operator}`);
       }
 
+      console.log(`📱 SMS Activate API Request: country=${country}, service=${service}, operator=${operator}`);
+
       const response = await axios.get(this.baseUrl, { params });
 
       const data = response.data;
-      
+      console.log(`📱 SMS Activate API Response: ${data}`);
+
       if (data.includes('ACCESS_NUMBER')) {
         const parts = data.split(':');
         this.activationId = parts[1];
@@ -52,10 +55,23 @@ class SMSActivate {
           number: this.activeNumber
         };
       } else {
-        throw new Error(data);
+        // Decode common SMS Activate error codes
+        let errorMessage = data;
+        if (data === 'NO_NUMBERS') {
+          errorMessage = 'No numbers available for this country/service/operator';
+        } else if (data === 'NO_BALANCE') {
+          errorMessage = 'Insufficient balance in SMS Activate account';
+        } else if (data === 'BAD_KEY') {
+          errorMessage = 'Invalid SMS Activate API key';
+        } else if (data === 'BAD_ACTION') {
+          errorMessage = 'Invalid API action';
+        } else if (data === 'BAD_SERVICE') {
+          errorMessage = 'Invalid service code';
+        }
+        throw new Error(`SMS Activate API Error: ${errorMessage}`);
       }
     } catch (error) {
-      console.error('Error getting number:', error);
+      console.error('❌ SMS Activate getNumber error:', error.message);
       throw error;
     }
   }
