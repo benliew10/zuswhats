@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, getAggregateVotesInPollMessage } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import express from 'express';
 import pino from 'pino';
@@ -255,7 +255,6 @@ class WhatsAppBot {
       const pollUpdate = message.message.pollUpdateMessage;
 
       console.log(`\n📊 Poll response from ${phoneNumber}`);
-      console.log(`   Poll update:`, JSON.stringify(pollUpdate, null, 2));
 
       const state = this.conversationState.getState(phoneNumber);
 
@@ -265,35 +264,65 @@ class WhatsAppBot {
         return;
       }
 
-      // Get the vote/selected option
-      // pollUpdate contains the selected options
-      if (pollUpdate.vote && pollUpdate.vote.length > 0) {
-        const selectedIndex = pollUpdate.vote[0]; // First (and only) selection
+      // Get the original poll message to decrypt votes
+      const pollCreationMessageKey = pollUpdate.pollCreationMessageKey;
 
-        const serviceArray = [
-          'Zus Coffee',
-          'Beutea',
-          'Chagee',
-          'Gigi Coffee',
-          'Luckin Coffee',
-          'Tealive',
-          'Kenangan Coffee'
-        ];
+      // Load the poll message from the store
+      const pollMessage = await this.sock.loadMessage(pollCreationMessageKey.remoteJid, pollCreationMessageKey.id);
 
-        if (selectedIndex >= 0 && selectedIndex < serviceArray.length) {
-          const selectedServiceName = serviceArray[selectedIndex];
+      if (!pollMessage) {
+        console.log('❌ Could not load poll message');
+        return;
+      }
+
+      // Decrypt the votes using Baileys' built-in function
+      const pollVotes = await getAggregateVotesInPollMessage({
+        message: pollMessage,
+        pollUpdates: [message.message]
+      });
+
+      console.log(`   Decrypted poll votes:`, JSON.stringify(pollVotes, null, 2));
+
+      // Find which option was selected
+      const serviceArray = [
+        'Zus Coffee - RM1.68',
+        'Beutea - RM1.68',
+        'Chagee - RM1.68',
+        'Gigi Coffee - RM1.68',
+        'Luckin Coffee - RM1.68',
+        'Tealive - RM1.68',
+        'Kenangan Coffee - RM1.68'
+      ];
+
+      const serviceNameArray = [
+        'Zus Coffee',
+        'Beutea',
+        'Chagee',
+        'Gigi Coffee',
+        'Luckin Coffee',
+        'Tealive',
+        'Kenangan Coffee'
+      ];
+
+      // Find the option with votes
+      for (let i = 0; i < serviceArray.length; i++) {
+        const optionName = serviceArray[i];
+        const votes = pollVotes[optionName];
+
+        if (votes && votes.length > 0) {
+          const selectedServiceName = serviceNameArray[i];
           const selectedService = SERVICES[selectedServiceName];
 
           console.log(`✅ User selected: ${selectedServiceName}`);
           await this.sendOrderDetails(phoneNumber, selectedService);
-        } else {
-          console.log(`❌ Invalid poll selection index: ${selectedIndex}`);
+          return;
         }
-      } else {
-        console.log('⚠️ No vote found in poll update');
       }
+
+      console.log('⚠️ No selection found in poll votes');
     } catch (error) {
       console.error('❌ Error handling poll response:', error);
+      console.error('   Error stack:', error.stack);
     }
   }
 
