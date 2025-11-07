@@ -270,53 +270,77 @@ class WhatsAppBot {
 
       // Get the original poll message from our store
       const pollCreationMessageKey = pollUpdate.pollCreationMessageKey;
-      const pollMessage = this.pollMessages.get(pollCreationMessageKey.id);
+      const pollMessageData = this.pollMessages.get(pollCreationMessageKey.id);
 
-      if (!pollMessage) {
+      if (!pollMessageData) {
         console.log('❌ Could not find stored poll message');
         return;
       }
 
       console.log(`   Found stored poll message with ID: ${pollCreationMessageKey.id}`);
 
+      // Track poll updates per poll
+      if (!pollMessageData.updates) {
+        pollMessageData.updates = [];
+      }
+      pollMessageData.updates.push(message);
+
       // Decrypt the votes using Baileys' built-in function
-      const pollVotes = await getAggregateVotesInPollMessage({
-        message: pollMessage,
-        pollUpdates: [message.message]
-      });
+      try {
+        const pollVotes = await getAggregateVotesInPollMessage({
+          message: pollMessageData,
+          pollUpdates: pollMessageData.updates.map(m => m.message)
+        });
 
-      console.log(`   Decrypted poll votes:`, JSON.stringify(pollVotes, null, 2));
+        console.log(`   Decrypted poll votes:`, JSON.stringify(pollVotes, null, 2));
 
-      // Find which option was selected
-      const serviceArray = [
-        'Zus Coffee - RM1.68',
-        'Beutea - RM1.68',
-        'Chagee - RM1.68',
-        'Gigi Coffee - RM1.68',
-        'Luckin Coffee - RM1.68',
-        'Tealive - RM1.68',
-        'Kenangan Coffee - RM1.68'
-      ];
+        // Find which option was selected
+        const serviceArray = [
+          'Zus Coffee - RM1.68',
+          'Beutea - RM1.68',
+          'Chagee - RM1.68',
+          'Gigi Coffee - RM1.68',
+          'Luckin Coffee - RM1.68',
+          'Tealive - RM1.68',
+          'Kenangan Coffee - RM1.68'
+        ];
 
-      const serviceNameArray = [
-        'Zus Coffee',
-        'Beutea',
-        'Chagee',
-        'Gigi Coffee',
-        'Luckin Coffee',
-        'Tealive',
-        'Kenangan Coffee'
-      ];
+        const serviceNameArray = [
+          'Zus Coffee',
+          'Beutea',
+          'Chagee',
+          'Gigi Coffee',
+          'Luckin Coffee',
+          'Tealive',
+          'Kenangan Coffee'
+        ];
 
-      // Find the option with votes
-      for (let i = 0; i < serviceArray.length; i++) {
-        const optionName = serviceArray[i];
-        const votes = pollVotes[optionName];
+        // Find the option with votes - check both array format and object format
+        let selectedServiceName = null;
 
-        if (votes && votes.length > 0) {
-          const selectedServiceName = serviceNameArray[i];
+        if (Array.isArray(pollVotes)) {
+          // If it's an array, find the first non-empty entry
+          for (let i = 0; i < pollVotes.length && i < serviceNameArray.length; i++) {
+            if (pollVotes[i] && pollVotes[i].length > 0) {
+              selectedServiceName = serviceNameArray[i];
+              break;
+            }
+          }
+        } else if (typeof pollVotes === 'object') {
+          // If it's an object, check by option name
+          for (let i = 0; i < serviceArray.length; i++) {
+            const optionName = serviceArray[i];
+            const votes = pollVotes[optionName];
+
+            if (votes && votes.length > 0) {
+              selectedServiceName = serviceNameArray[i];
+              break;
+            }
+          }
+        }
+
+        if (selectedServiceName) {
           const selectedService = SERVICES[selectedServiceName];
-
           console.log(`✅ User selected: ${selectedServiceName}`);
 
           // Clean up the poll message from storage
@@ -325,9 +349,15 @@ class WhatsAppBot {
           await this.sendOrderDetails(phoneNumber, selectedService);
           return;
         }
+
+        console.log('⚠️ No selection found in poll votes, checking vote structure...');
+        console.log('   Vote type:', typeof pollVotes);
+        console.log('   Vote keys:', Object.keys(pollVotes));
+      } catch (decryptError) {
+        console.error('⚠️ Vote decryption failed:', decryptError.message);
+        console.log('   Falling back to simple tracking...');
       }
 
-      console.log('⚠️ No selection found in poll votes');
     } catch (error) {
       console.error('❌ Error handling poll response:', error);
       console.error('   Error stack:', error.stack);
