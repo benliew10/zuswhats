@@ -28,25 +28,12 @@ class WhatsAppBot {
         })
       : new LocalAuth();
 
-    // Configure Puppeteer with stealth args for cloud hosting
+    // Configure Puppeteer with minimal args
     const puppeteerConfig = {
       headless: true,
       args: [
         '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-        '--disable-features=IsolateOrigins,site-per-process',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-infobars',
-        '--window-size=1920,1080',
-        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        '--disable-setuid-sandbox'
       ],
       handleSIGINT: false,
       handleSIGTERM: false,
@@ -71,12 +58,7 @@ class WhatsAppBot {
     this.client = new Client({
       authStrategy: authStrategy,
       puppeteer: puppeteerConfig,
-      authTimeoutMs: 0, // Disable auth timeout
-      qrMaxRetries: 5,
-      webVersionCache: {
-        type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
-      }
+      authTimeoutMs: 0 // Disable auth timeout
     });
 
     this.emailMonitor = new EmailMonitor({
@@ -107,21 +89,6 @@ class WhatsAppBot {
       console.log('\n👆 Open WhatsApp on your phone → Settings → Linked Devices → Link a Device\n');
     });
 
-    // Pairing code for phone number linking (better for cloud deployment)
-    this.client.on('code', (code) => {
-      console.log('\n🔐 PAIRING CODE RECEIVED:\n');
-      console.log('════════════════════════════');
-      console.log(`   ${code}   `);
-      console.log('════════════════════════════');
-      console.log('\n📱 To link your WhatsApp:');
-      console.log('1. Open WhatsApp on your phone');
-      console.log('2. Go to Settings → Linked Devices');
-      console.log('3. Tap "Link a Device"');
-      console.log('4. Tap "Link with phone number instead"');
-      console.log('5. Enter this code: ' + code);
-      console.log('\n');
-    });
-
     // Client ready
     this.client.on('ready', () => {
       console.log('✅ WhatsApp bot is ready!');
@@ -146,11 +113,6 @@ class WhatsAppBot {
       }
       // Gracefully exit to allow restart
       setTimeout(() => process.exit(1), 5000);
-    });
-
-    // Remote session saved (authentication successful)
-    this.client.on('remote_session_saved', () => {
-      console.log('💾 Session saved successfully!');
     });
 
     // Loading screen
@@ -545,28 +507,7 @@ Note: You can change the number after 2 minutes if there is no code coming, type
       console.log('⏳ This will take 30-60 seconds, please wait...');
       console.log('💡 The browser runs in the background (headless mode)\n');
 
-      // Request pairing code if phone number is provided
-      if (process.env.WHATSAPP_PHONE_NUMBER) {
-        console.log('📱 Phone number provided - will request pairing code');
-        console.log('   Phone: ' + process.env.WHATSAPP_PHONE_NUMBER);
-
-        // Initialize and request pairing code
-        await this.client.initialize();
-
-        // After initialization starts, request pairing code
-        try {
-          await this.client.requestPairingCode(process.env.WHATSAPP_PHONE_NUMBER);
-          console.log('✅ Pairing code requested for: ' + process.env.WHATSAPP_PHONE_NUMBER);
-        } catch (pairingError) {
-          console.log('⚠️  Pairing code request failed, will show QR code instead');
-          console.log('   Error:', pairingError.message);
-        }
-      } else {
-        console.log('📱 No phone number provided - will show QR code');
-        console.log('   (Set WHATSAPP_PHONE_NUMBER env var to use pairing code instead)');
-        await this.client.initialize();
-      }
-
+      await this.client.initialize();
     } catch (error) {
       console.error('❌ Failed to initialize WhatsApp client');
       console.error('Error:', error.message);
