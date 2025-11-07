@@ -11,7 +11,7 @@ services:
       - key: NODE_VERSION
         value: 18.17.0
       - key: WHATSAPP_SESSION_PATH
-        value: ./.wwebjs_auth
+        value: ./baileys_auth
       - key: EMAIL_HOST
         value: imap.gmail.com
       - key: EMAIL_PORT
