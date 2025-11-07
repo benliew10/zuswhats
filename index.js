@@ -40,6 +40,7 @@ class WhatsAppBot {
     this.paymentImagePath = process.env.PAYMENT_IMAGE_PATH || './payment-image.jpg';
     this.paymentNames = [];
     this.pendingNames = new Map(); // Store names temporarily before email arrives
+    this.processedMessages = new Set(); // Track processed message IDs to avoid duplicates
   }
 
   async connectToWhatsApp() {
@@ -92,6 +93,21 @@ class WhatsAppBot {
     this.sock.ev.on('messages.upsert', async ({ messages }) => {
       const message = messages[0];
       if (!message.message || message.key.fromMe) return;
+
+      // Deduplicate messages
+      const messageId = message.key.id;
+      if (this.processedMessages.has(messageId)) {
+        console.log(`⏭️ Skipping duplicate message: ${messageId}`);
+        return;
+      }
+
+      this.processedMessages.add(messageId);
+
+      // Clean up old message IDs (keep last 1000)
+      if (this.processedMessages.size > 1000) {
+        const arr = Array.from(this.processedMessages);
+        this.processedMessages = new Set(arr.slice(-1000));
+      }
 
       await this.handleMessage(message);
     });
