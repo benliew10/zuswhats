@@ -104,8 +104,8 @@ class WhatsAppBot {
                           message.message?.extendedTextMessage?.text || '';
       const messageBodyUpper = messageBody.trim().toUpperCase();
 
-      // Handle poll responses
-      if (message.message?.pollUpdateMessage) {
+      // Handle list/button responses
+      if (message.message?.listResponseMessage || message.message?.buttonsResponseMessage) {
         await this.handlePollResponse(message, phoneNumber);
         return;
       }
@@ -207,54 +207,71 @@ class WhatsAppBot {
   }
 
   async sendServicePoll(phoneNumber) {
-    const pollMessage = await this.sock.sendMessage(phoneNumber, {
-      poll: {
-        name: 'Select Your Service',
-        values: [
-          'Zus Coffee RM1.68',
-          'Beutea RM1.68',
-          'Chagee RM1.68',
-          'Gigi Coffee RM1.68',
-          'Luckin Coffee RM1.68',
-          'Tealive RM1.68',
-          'Kenangan Coffee RM1.68'
-        ],
-        selectableCount: 1
-      }
+    const listMessage = await this.sock.sendMessage(phoneNumber, {
+      text: 'Please select your service:',
+      footer: 'TOPUPSTATION 24HRS AUTO BOT',
+      buttonText: 'Select Service',
+      sections: [{
+        title: 'Available Services',
+        rows: [
+          { title: 'Zus Coffee', description: 'RM1.68', rowId: 'service_zus' },
+          { title: 'Beutea', description: 'RM1.68', rowId: 'service_beutea' },
+          { title: 'Chagee', description: 'RM1.68', rowId: 'service_chagee' },
+          { title: 'Gigi Coffee', description: 'RM1.68', rowId: 'service_gigi' },
+          { title: 'Luckin Coffee', description: 'RM1.68', rowId: 'service_luckin' },
+          { title: 'Tealive', description: 'RM1.68', rowId: 'service_tealive' },
+          { title: 'Kenangan Coffee', description: 'RM1.68', rowId: 'service_kenangan' }
+        ]
+      }]
     });
 
-    // Store poll message key for potential deletion
+    // Store list message key for potential deletion
     this.conversationState.setState(phoneNumber, {
-      pollMessageKey: pollMessage.key
+      listMessageKey: listMessage.key
     });
   }
 
   async handlePollResponse(message, phoneNumber) {
     try {
-      const pollUpdate = message.message.pollUpdateMessage;
+      // Handle list response
+      const listResponse = message.message?.listResponseMessage;
+      const buttonResponse = message.message?.buttonsResponseMessage;
 
-      // Debug: Log the full poll update structure
-      console.log('📊 Raw poll update:', JSON.stringify(pollUpdate, null, 2));
+      let rowId = null;
 
-      // Try different ways to get the vote
-      const votes = pollUpdate.vote || pollUpdate.votes || [];
+      if (listResponse) {
+        rowId = listResponse.singleSelectReply?.selectedRowId;
+        console.log('📋 List response:', rowId);
+      } else if (buttonResponse) {
+        rowId = buttonResponse.selectedButtonId;
+        console.log('🔘 Button response:', rowId);
+      }
 
-      if (!votes || votes.length === 0) {
-        console.log('⚠️ No votes found in poll update');
+      if (!rowId) {
+        console.log('⚠️ No valid response found');
         return;
       }
 
-      const selectedIndex = Array.isArray(votes) ? votes[0] : votes;
-      const serviceNames = Object.keys(SERVICES);
-      const selectedServiceName = serviceNames[selectedIndex];
+      // Map rowId to service
+      const serviceMap = {
+        'service_zus': 'Zus Coffee',
+        'service_beutea': 'Beutea',
+        'service_chagee': 'Chagee',
+        'service_gigi': 'Gigi Coffee',
+        'service_luckin': 'Luckin Coffee',
+        'service_tealive': 'Tealive',
+        'service_kenangan': 'Kenangan Coffee'
+      };
+
+      const selectedServiceName = serviceMap[rowId];
       const selectedService = SERVICES[selectedServiceName];
 
       if (!selectedService) {
-        console.log(`❌ Could not find service at index ${selectedIndex}`);
+        console.log(`❌ Could not find service for rowId ${rowId}`);
         return;
       }
 
-      console.log(`📊 Poll response: ${selectedServiceName} (index: ${selectedIndex})`);
+      console.log(`📊 Service selected: ${selectedServiceName}`);
 
       const currentState = this.conversationState.getState(phoneNumber);
 
