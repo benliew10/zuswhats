@@ -1,12 +1,10 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
-import qrcode from 'qrcode-terminal';
 import express from 'express';
-import pino from 'pino';
+import dotenv from 'dotenv';
+import { existsSync, readFileSync } from 'fs';
 import EmailMonitor from './services/emailMonitor.js';
 import SMSActivate from './services/smsActivate.js';
 import ConversationState from './services/conversationState.js';
-import dotenv from 'dotenv';
-import { existsSync, readFileSync } from 'fs';
+import WhatsAppBusinessAPI from './services/whatsappBusinessAPI.js';
 
 dotenv.config();
 
@@ -22,9 +20,10 @@ const SERVICES = {
 
 class WhatsAppBot {
   constructor() {
-    this.sock = null;
-    this.qrRetries = 0;
-    this.maxQrRetries = 5;
+    this.whatsappAPI = new WhatsAppBusinessAPI(
+      process.env.WHATSAPP_ACCESS_TOKEN,
+      process.env.WHATSAPP_PHONE_NUMBER_ID
+    );
 
     this.emailMonitor = new EmailMonitor({
       credentialsPath: process.env.GMAIL_CREDENTIALS_PATH || './credentials.json',
@@ -39,89 +38,48 @@ class WhatsAppBot {
     this.conversationState = new ConversationState();
     this.paymentImagePath = process.env.PAYMENT_IMAGE_PATH || './payment-image.jpg';
     this.paymentNames = [];
-    this.pendingNames = new Map(); // Store names temporarily before email arrives
-    this.processedMessages = new Set(); // Track processed message IDs to avoid duplicates
+    this.pendingNames = new Map();
+    this.processedMessages = new Set();
   }
 
-  async connectToWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('./baileys_auth');
-    const { version } = await fetchLatestBaileysVersion();
-
-    this.sock = makeWASocket({
-      version,
-      auth: state,
-      printQRInTerminal: false,
-      logger: pino({ level: 'silent' }),
-      browser: ['WhatsApp Bot', 'Chrome', '1.0.0']
-    });
-
-    this.sock.ev.on('creds.update', saveCreds);
-
-    this.sock.ev.on('connection.update', async (update) => {
-      const { connection, lastDisconnect, qr } = update;
-
-      if (qr) {
-        this.qrRetries++;
-        console.log('\n📱 QR CODE RECEIVED - SCAN THIS WITH YOUR PHONE:\n');
-        qrcode.generate(qr, { small: true });
-        console.log('\n👆 Open WhatsApp on your phone → Settings → Linked Devices → Link a Device\n');
-
-        if (this.qrRetries >= this.maxQrRetries) {
-          console.log('❌ Max QR retries reached. Exiting...');
-          process.exit(1);
-        }
-      }
-
-      if (connection === 'close') {
-        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-        console.log('❌ Connection closed. Reconnect:', shouldReconnect);
-
-        if (shouldReconnect) {
-          setTimeout(() => this.connectToWhatsApp(), 5000);
-        } else {
-          console.log('🔴 Logged out. Please delete baileys_auth folder and restart.');
-          process.exit(1);
-        }
-      } else if (connection === 'open') {
-        console.log('✅ WhatsApp bot is ready!');
-        console.log('✅ Bot is now listening for messages...');
-        this.qrRetries = 0;
-        await this.startEmailMonitoring();
-      }
-    });
-
-    this.sock.ev.on('messages.upsert', async ({ messages }) => {
-      const message = messages[0];
-      if (!message.message || message.key.fromMe) return;
-
-      // Deduplicate messages
-      const messageId = message.key.id;
-      if (this.processedMessages.has(messageId)) {
-        console.log(`⏭️ Skipping duplicate message: ${messageId}`);
-        return;
-      }
-
-      this.processedMessages.add(messageId);
-
-      // Clean up old message IDs (keep last 1000)
-      if (this.processedMessages.size > 1000) {
-        const arr = Array.from(this.processedMessages);
-        this.processedMessages = new Set(arr.slice(-1000));
-      }
-
-      await this.handleMessage(message);
-    });
+  async start() {
+    console.log('✅ WhatsApp Bot with Business API is ready!');
+    console.log('✅ Bot is now listening for webhook messages...');
+    await this.startEmailMonitoring();
   }
 
-  async handleMessage(message) {
+  async handleWebhookMessage(webhookData) {
+    const parsedMessage = this.whatsappAPI.parseWebhookMessage(webhookData);
+    if (!parsedMessage) return;
+
+    const { from, messageId, body } = parsedMessage;
+
+    // Deduplicate messages
+    if (this.processedMessages.has(messageId)) {
+      console.log(`⏭️ Skipping duplicate message: ${messageId}`);
+      return;
+    }
+
+    this.processedMessages.add(messageId);
+
+    // Clean up old message IDs (keep last 1000)
+    if (this.processedMessages.size > 1000) {
+      const arr = Array.from(this.processedMessages);
+      this.processedMessages = new Set(arr.slice(-1000));
+    }
+
+    // Mark as read
+    await this.whatsappAPI.markAsRead(messageId);
+
+    // Handle message
+    await this.handleMessage(from, body);
+  }
+
+  async handleMessage(phoneNumber, messageBody) {
     try {
-      const phoneNumber = message.key.remoteJid;
-      const messageBody = message.message?.conversation ||
-                          message.message?.extendedTextMessage?.text || '';
       const messageBodyUpper = messageBody.trim().toUpperCase();
 
-
-      console.log(`\n📨 Message from ${phoneNumber}:`);
+      console.log(`📨 Message from ${phoneNumber}:`);
       console.log(`   Body: ${messageBody}`);
 
       const state = this.conversationState.getState(phoneNumber);
@@ -129,14 +87,8 @@ class WhatsAppBot {
 
       switch (state.step) {
         case 'idle':
-          const template1 = `TOPUPSTATION 24HRS AUTO BOT\nVOUCHER SERVICE\n\nSupports: Android and IOS\n\nTo make payment please reply: PAYMENT\nTo contact live agent please reply: live agent`;
-          await this.sendMessage(phoneNumber, template1);
-          this.conversationState.setState(phoneNumber, { step: 'awaiting_payment_keyword' });
-          break;
-
         case 'awaiting_payment_keyword':
           if (messageBodyUpper === 'PAYMENT' || messageBodyUpper.includes('PAYMENT')) {
-            // Send numbered service list
             const serviceMenu = `Please select your service by replying with the number:
 
 1️⃣ Zus Coffee - RM1.68
@@ -148,8 +100,11 @@ class WhatsAppBot {
 7️⃣ Kenangan Coffee - RM1.68
 
 Reply with the number (1-7)`;
+
             await this.sendMessage(phoneNumber, serviceMenu);
             this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
+          } else {
+            await this.sendMessage(phoneNumber, 'Please reply "PAYMENT" to start the process.');
           }
           break;
 
@@ -167,12 +122,10 @@ Reply with the number (1-7)`;
 
           let selectedServiceName = null;
 
-          // Try to match by number (1-7)
           const num = parseInt(selection);
           if (num >= 1 && num <= 7) {
             selectedServiceName = serviceArray[num - 1];
           } else {
-            // Try to match by name
             for (const serviceName of serviceArray) {
               if (messageBodyUpper.includes(serviceName.toUpperCase())) {
                 selectedServiceName = serviceName;
@@ -191,12 +144,12 @@ Reply with the number (1-7)`;
 
         case 'waiting_for_payment':
           const enteredName = messageBody.trim();
-          console.log(`👤 Customer entered name: ${enteredName}`);
+          console.log(`👤 Customer entered name: "${enteredName}"`);
 
-          // Check if payment email already arrived
           let matchedPayment = null;
           for (const payment of this.paymentNames) {
             if (this.namesMatch(enteredName, payment.name)) {
+              console.log(`✅ Name matched with payment: ${payment.name}`);
               matchedPayment = payment;
               break;
             }
@@ -205,9 +158,8 @@ Reply with the number (1-7)`;
           if (matchedPayment) {
             console.log(`✅ Payment verified for: ${matchedPayment.name}`);
             this.paymentNames = this.paymentNames.filter(p => p !== matchedPayment);
-            await this.processActivation(message, phoneNumber);
+            await this.processActivation(phoneNumber);
           } else {
-            // Store name temporarily and wait for email
             console.log(`⏳ Storing name temporarily, waiting for payment email...`);
             const currentState = this.conversationState.getState(phoneNumber);
             this.pendingNames.set(phoneNumber, {
@@ -218,7 +170,6 @@ Reply with the number (1-7)`;
 
             await this.sendMessage(phoneNumber, '✅ Name received! Once payment is confirmed, your number will be sent automatically.\n\nIf you already made payment 5 mins ago and you don\'t receive the number, please contact live agent.');
 
-            // Set timeout to clear pending name after 5 minutes
             setTimeout(() => {
               if (this.pendingNames.has(phoneNumber)) {
                 console.log(`⏰ Clearing pending name for ${phoneNumber} after 5 minutes`);
@@ -248,7 +199,7 @@ Reply with the number (1-7)`;
               if (currentState.activationId) {
                 await this.smsActivate.releaseNumber(currentState.activationId);
                 await this.sendMessage(phoneNumber, '⏳ Cancelling old number and getting a new one...');
-                await this.processActivation(message, phoneNumber);
+                await this.processActivation(phoneNumber);
               }
             }
           } else {
@@ -258,7 +209,7 @@ Reply with the number (1-7)`;
 
         default:
           this.conversationState.resetState(phoneNumber);
-          await this.handleMessage(message);
+          await this.handleMessage(phoneNumber, messageBody);
       }
     } catch (error) {
       console.error('❌ Error handling message:', error);
@@ -266,21 +217,6 @@ Reply with the number (1-7)`;
   }
 
   async sendOrderDetails(phoneNumber, selectedService) {
-    const currentState = this.conversationState.getState(phoneNumber);
-
-    // Delete old order details message if exists
-    if (currentState.orderMessageKey) {
-      try {
-        await this.sock.sendMessage(phoneNumber, {
-          delete: currentState.orderMessageKey
-        });
-        console.log('🗑️ Deleted old order details message');
-      } catch (error) {
-        console.log('⚠️ Could not delete old message:', error.message);
-      }
-    }
-
-    // Send new order details
     const orderDetails = `━━━━━━━━━━━━━━━━
 Here is your order details!
 
@@ -296,32 +232,20 @@ After payment please send your FULL NAME for verification purpose
 (Note: if you encounter the payment issue feel free to contact live agent)
 ━━━━━━━━━━━━━━━━`;
 
-    const orderMessage = await this.sendMessage(phoneNumber, orderDetails);
+    await this.sendMessage(phoneNumber, orderDetails);
 
-    // Send payment QR image
-    if (existsSync(this.paymentImagePath)) {
-      try {
-        const imageBuffer = readFileSync(this.paymentImagePath);
-        await this.sock.sendMessage(phoneNumber, {
-          image: imageBuffer,
-          caption: 'GXBank Payment QR Code'
-        });
-      } catch (error) {
-        console.error('❌ Error sending payment image:', error.message);
-      }
-    }
-
-    // Update state with selected service and order message key
     this.conversationState.setState(phoneNumber, {
       step: 'waiting_for_payment',
-      selectedService: selectedService,
-      orderMessageKey: orderMessage.key
+      selectedService: selectedService
     });
   }
 
-  async sendMessage(jid, text) {
-    const sentMsg = await this.sock.sendMessage(jid, { text });
-    return sentMsg;
+  async sendMessage(phoneNumber, text) {
+    try {
+      await this.whatsappAPI.sendMessage(phoneNumber, text);
+    } catch (error) {
+      console.error(`❌ Error sending message to ${phoneNumber}:`, error.message);
+    }
   }
 
   namesMatch(enteredName, emailName) {
@@ -333,7 +257,7 @@ After payment please send your FULL NAME for verification purpose
            normalizedEmail.includes(normalizedEntered);
   }
 
-  async processActivation(message, phoneNumber) {
+  async processActivation(phoneNumber) {
     try {
       const currentState = this.conversationState.getState(phoneNumber);
       if (currentState.checkCodeInterval) {
@@ -348,55 +272,82 @@ After payment please send your FULL NAME for verification purpose
       const country = parseInt(process.env.SMS_ACTIVATE_COUNTRY) || 0;
       const selectedService = currentState.selectedService;
       const serviceCode = selectedService.code;
-      // Don't use operator filter to get more available numbers
       const operator = null;
 
       console.log(`📱 Getting number for ${selectedService.name} (code: ${serviceCode})`);
 
       const numberData = await this.smsActivate.getNumber(country, serviceCode, operator);
 
-      const template3 = `━━━━━━━━━━━━━━━━
-PAYMENT VERIFIED!
+      const activationId = numberData.activationId;
+      const phoneNumberReceived = numberData.number;
 
-Name: ${selectedService.name}
-NUMBER: ${numberData.number}
+      await this.sendMessage(
+        phoneNumber,
+        `✅ ${selectedService.name} Verification\n\n` +
+        `📞 Phone Number: +${phoneNumberReceived}\n` +
+        `🔢 Activation ID: ${activationId}\n\n` +
+        `⏳ Waiting for verification code...\n` +
+        `(This may take 1-5 minutes)\n\n` +
+        `⚠️ After 2 minutes, you can request a new number by typing "CHANGE"`
+      );
 
-Waiting for SMS……
-The code will be sent automatically
-
-Note: You can change the number after 2 minutes if there is no code coming, type 'Change' for a new number
-━━━━━━━━━━━━━━━━`;
-
-      await this.sendMessage(phoneNumber, template3);
+      let codeReceived = false;
+      let messageCount = 0;
 
       const checkCodeInterval = setInterval(async () => {
         try {
-          const status = await this.smsActivate.getStatus(numberData.activationId);
+          const status = await this.smsActivate.getStatus(activationId);
 
           if (status.status === 'ok') {
-            const state = this.conversationState.getState(phoneNumber);
-            if (state.checkCodeInterval) clearInterval(state.checkCodeInterval);
-            if (state.timeoutId) clearTimeout(state.timeoutId);
+            codeReceived = true;
+            clearInterval(checkCodeInterval);
 
-            // Send full SMS message instead of just code
-            const fullMessage = status.fullMessage || status.code;
-            await this.sendMessage(phoneNumber, `✅ SMS Received:\n\n${fullMessage}`);
+            const verificationCode = status.code;
+            const fullMessage = status.fullMessage;
 
-            await this.smsActivate.releaseNumber(numberData.activationId);
+            console.log(`✅ Code received for ${phoneNumber}: ${verificationCode}`);
+            console.log(`📩 Full SMS message: ${fullMessage}`);
+
+            await this.sendMessage(
+              phoneNumber,
+              `✅ ${selectedService.name} Verification Code Received!\n\n` +
+              `🔐 Code: ${verificationCode}\n\n` +
+              `📱 Full Message:\n${fullMessage}\n\n` +
+              `Thank you for your order!`
+            );
+
             this.conversationState.resetState(phoneNumber);
+          } else if (status.status === 'cancelled') {
+            codeReceived = true;
+            clearInterval(checkCodeInterval);
+            await this.sendMessage(phoneNumber, '❌ Activation cancelled.');
+            this.conversationState.resetState(phoneNumber);
+          } else {
+            messageCount++;
+            if (messageCount % 15 === 0) {
+              await this.sendMessage(phoneNumber, '⏳ Still waiting for code...');
+            }
           }
         } catch (error) {
-          console.error('Error checking SMS status:', error);
+          console.error('❌ Error checking code:', error);
+          clearInterval(checkCodeInterval);
+          await this.sendMessage(phoneNumber, `❌ Error: ${error.message}`);
+          this.conversationState.resetState(phoneNumber);
         }
-      }, 10000);
+      }, 2000);
 
       const timeoutId = setTimeout(async () => {
-        clearInterval(checkCodeInterval);
-        await this.sendMessage(phoneNumber, '⏰ Timeout: No code received within 20 minutes. Please type CHANGE for a new number.');
-      }, 20 * 60 * 1000);
+        if (!codeReceived) {
+          clearInterval(checkCodeInterval);
+          await this.sendMessage(phoneNumber, '⏰ Timeout: No code received within 5 minutes.');
+          this.conversationState.resetState(phoneNumber);
+        }
+      }, 5 * 60 * 1000);
 
       this.conversationState.setState(phoneNumber, {
-        activationId: numberData.activationId,
+        step: 'waiting_for_code',
+        activationId: activationId,
+        phoneNumber: phoneNumberReceived,
         numberSentTimestamp: Date.now(),
         checkCodeInterval: checkCodeInterval,
         timeoutId: timeoutId
@@ -404,14 +355,14 @@ Note: You can change the number after 2 minutes if there is no code coming, type
     } catch (error) {
       console.error('❌ Error processing activation:', error);
 
-      // Check if it's a "no numbers available" error
       if (error.message.includes('No numbers available')) {
+        const currentState = this.conversationState.getState(phoneNumber);
+        const selectedService = currentState.selectedService;
+
         await this.sendMessage(phoneNumber, `❌ Sorry, ${selectedService.name} service is temporarily unavailable due to insufficient phone numbers.\n\nPlease select a different service or contact live agent.`);
 
-        // Reset to service selection
         this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
 
-        // Resend service menu
         const serviceMenu = `Please select your service by replying with the number:
 
 1️⃣ Zus Coffee - RM1.68
@@ -444,37 +395,25 @@ Reply with the number (1-7)`;
           if (amount === expectedAmount) {
             console.log('✅ Payment amount verified: RM' + amount);
 
-            // Check if there's a pending name waiting for this payment
             let matchedPending = null;
             for (const [phoneNumber, pendingData] of this.pendingNames.entries()) {
               if (this.namesMatch(pendingData.name, paymentData.name)) {
+                console.log(`🎯 Payment matched with pending name: ${pendingData.name}`);
                 matchedPending = { phoneNumber, ...pendingData };
                 break;
               }
             }
 
             if (matchedPending) {
-              // Name was stored first, process immediately
-              console.log(`⚡ Found pending name for ${paymentData.name}, processing immediately`);
               this.pendingNames.delete(matchedPending.phoneNumber);
-
-              // Create a mock message object for processActivation
-              const mockMessage = {
-                key: { remoteJid: matchedPending.phoneNumber }
-              };
-
-              await this.processActivation(mockMessage, matchedPending.phoneNumber);
+              await this.sendMessage(matchedPending.phoneNumber, '✅ Payment verified! Processing your request now...');
+              await this.processActivation(matchedPending.phoneNumber);
             } else {
-              // Email arrived first, store it normally
-              this.paymentNames.push({
-                name: paymentData.name,
-                amount: amount,
-                timestamp: Date.now(),
-                emailSubject: email.subject
-              });
+              this.paymentNames.push(paymentData);
+              console.log(`📝 Added payment to list: ${paymentData.name}`);
             }
           } else {
-            console.log(`⚠️ Payment amount mismatch: Expected RM${expectedAmount}, got RM${amount}`);
+            console.log(`⚠️ Payment amount mismatch. Expected: RM${expectedAmount}, Got: RM${amount}`);
           }
         }
       });
@@ -482,26 +421,45 @@ Reply with the number (1-7)`;
       console.error('❌ Email monitoring error:', error);
     }
   }
-
-  async initialize() {
-    console.log('🚀 Starting WhatsApp Bot with Baileys...');
-    await this.connectToWhatsApp();
-  }
 }
 
-// Start the bot
+const app = express();
+app.use(express.json());
+
 const bot = new WhatsAppBot();
 
-// Health check server
-const app = express();
-const PORT = process.env.PORT || 3000;
+app.get('/webhook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+
+  const verifyToken = process.env.WEBHOOK_VERIFY_TOKEN || 'my_verify_token_12345';
+
+  const result = bot.whatsappAPI.verifyWebhook(mode, token, challenge, verifyToken);
+  if (result) {
+    res.status(200).send(result);
+  } else {
+    res.sendStatus(403);
+  }
+});
+
+app.post('/webhook', async (req, res) => {
+  try {
+    await bot.handleWebhookMessage(req.body);
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('❌ Webhook error:', error);
+    res.sendStatus(500);
+  }
+});
 
 app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.status(200).json({ status: 'ok' });
 });
 
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, async () => {
+  console.log(`🚀 Starting WhatsApp Bot with Business API...`);
   console.log(`Health check server running on port ${PORT}`);
+  await bot.start();
 });
-
-bot.initialize().catch(console.error);
