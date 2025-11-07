@@ -28,10 +28,11 @@ services:
         value: aik
       - key: SMS_ACTIVATE_OPERATOR
         value: hotlink
+      - key: SMS_ACTIVATE_API_KEY
+        value: bb67d66c0A6b9Ae29233e0AA5251127c
       # The following need to be set in Render dashboard as secrets:
       # - EMAIL_USER (your Gmail address)
       # - EMAIL_PASSWORD (Gmail app password)
-      # - SMS_ACTIVATE_API_KEY
       # - GMAIL_CREDENTIALS_PATH (./credentials.json)
       # - GMAIL_TOKEN_PATH (./token.json)
       # - WHATSAPP_PHONE_NUMBER (optional: your WhatsApp phone number with country code, e.g., 60123456789)
