@@ -28,12 +28,25 @@ class WhatsAppBot {
         })
       : new LocalAuth();
 
-    // Configure Puppeteer with minimal args
+    // Configure Puppeteer with stealth args for cloud hosting
     const puppeteerConfig = {
       headless: true,
       args: [
         '--no-sandbox',
-        '--disable-setuid-sandbox'
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+        '--window-size=1920,1080',
+        '--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       ],
       handleSIGINT: false,
       handleSIGTERM: false,
@@ -59,10 +72,11 @@ class WhatsAppBot {
       authStrategy: authStrategy,
       puppeteer: puppeteerConfig,
       authTimeoutMs: 0, // Disable auth timeout
-      // Enable pairing code (phone number linking)
-      // Set your phone number in environment variable WHATSAPP_PHONE_NUMBER
-      // Format: country code without + (e.g., 60123456789 for Malaysia)
-      qrMaxRetries: 5
+      qrMaxRetries: 5,
+      webVersionCache: {
+        type: 'remote',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html'
+      }
     });
 
     this.emailMonitor = new EmailMonitor({
@@ -123,6 +137,20 @@ class WhatsAppBot {
     // Disconnected
     this.client.on('disconnected', (reason) => {
       console.log('❌ Client disconnected:', reason);
+      if (reason === 'LOGOUT') {
+        console.log('⚠️  WhatsApp logged out - this can happen if:');
+        console.log('   1. WhatsApp detected unusual activity');
+        console.log('   2. Session was logged out from phone');
+        console.log('   3. Too many failed auth attempts');
+        console.log('💡 Solution: Delete .wwebjs_auth folder and scan QR code again');
+      }
+      // Gracefully exit to allow restart
+      setTimeout(() => process.exit(1), 5000);
+    });
+
+    // Remote session saved (authentication successful)
+    this.client.on('remote_session_saved', () => {
+      console.log('💾 Session saved successfully!');
     });
 
     // Loading screen
