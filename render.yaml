@@ -25,9 +25,9 @@ services:
       - key: SMS_ACTIVATE_API_KEY
         value: bb67d66c0A6b9Ae29233e0AA5251127c
       - key: WHATSAPP_ACCESS_TOKEN
-        value: EAATOlmXhIzEBPZC0760e05Q1k5PvrYUPX7K4ZABIJSoNqllOn5WotiZBOd8TDBCAKd4tYWFF9bR5pPJtsXhZBC6UXitbt5V011JSMDaa50hwuv34rBENPqAKcgchu4wZCOyiS1TZA3GzBvyxaGBPGxkKWpp6rx5ZAABXDGgeCpiecBDrn7lYuqMNUJAuGQBtJvQYgZDZD
+        value: EAAI7iedJ20EBP5mg2v2Yh7SDVWCfPWzTTiYDycCoYUOwjYxIdos0TNOeMJjLJ0xolONXoLv5Q5mBYfaTaNy5jwOUuRZCBn7EiuZCGYGiZCntu1nZAj9w08JEsSZB7odoZC3z7iJnxUXqSxQMOUFjp6jqjZB7ZB94LoZAB128iaxkJDCK6bFE4dRZCZBMnCD7GW2ujXl6OPqTfdVUci3QshRdMqFZBMhAgNB1SHL54h5hvDi4
       - key: WHATSAPP_PHONE_NUMBER_ID
-        value: 784236368116708
+        value: 848347785032398
       - key: WEBHOOK_VERIFY_TOKEN
         value: my_verify_token_12345
       # The following need to be set in Render dashboard as secrets:
