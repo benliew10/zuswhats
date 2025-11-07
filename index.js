@@ -13,7 +13,7 @@ dotenv.config();
 const SERVICES = {
   'Zus Coffee': { name: 'Zus Coffee', code: 'aik', price: 'RM1.68' },
   'Beutea': { name: 'Beutea', code: 'ot', price: 'RM1.68' },
-  'Chagee': { name: 'Chagee', code: 'bmx', price: 'RM1.68' },
+  'Chagee': { name: 'Chagee', code: 'bwx', price: 'RM1.68' },
   'Gigi Coffee': { name: 'Gigi Coffee', code: 'ot', price: 'RM1.68' },
   'Luckin Coffee': { name: 'Luckin Coffee', code: 'ot', price: 'RM1.68' },
   'Tealive': { name: 'Tealive', code: 'avb', price: 'RM1.68' },
@@ -403,7 +403,30 @@ Note: You can change the number after 2 minutes if there is no code coming, type
       });
     } catch (error) {
       console.error('❌ Error processing activation:', error);
-      await this.sendMessage(phoneNumber, `❌ Error: ${error.message}. Please try again or contact live agent.`);
+
+      // Check if it's a "no numbers available" error
+      if (error.message.includes('No numbers available')) {
+        await this.sendMessage(phoneNumber, `❌ Sorry, ${selectedService.name} service is temporarily unavailable due to insufficient phone numbers.\n\nPlease select a different service or contact live agent.`);
+
+        // Reset to service selection
+        this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
+
+        // Resend service menu
+        const serviceMenu = `Please select your service by replying with the number:
+
+1️⃣ Zus Coffee - RM1.68
+2️⃣ Beutea - RM1.68
+3️⃣ Chagee - RM1.68
+4️⃣ Gigi Coffee - RM1.68
+5️⃣ Luckin Coffee - RM1.68
+6️⃣ Tealive - RM1.68
+7️⃣ Kenangan Coffee - RM1.68
+
+Reply with the number (1-7)`;
+        await this.sendMessage(phoneNumber, serviceMenu);
+      } else {
+        await this.sendMessage(phoneNumber, `❌ Error: ${error.message}. Please try again or contact live agent.`);
+      }
     }
   }
 
