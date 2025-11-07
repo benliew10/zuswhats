@@ -68,26 +68,50 @@ class EmailMonitor {
 
   async markExistingEmailsAsProcessed() {
     try {
-      console.log('📧 Marking existing emails as processed (ignoring old emails)...');
+      console.log('📧 Checking for recent payment emails...');
       const query = `is:unread from:${this.config.paymentEmailSender}`;
 
       const response = await this.gmail.users.messages.list({
         userId: 'me',
         q: query,
-        maxResults: 100, // Get all existing unread emails
+        maxResults: 100,
       });
 
       if (response.data.messages && response.data.messages.length > 0) {
-        response.data.messages.forEach(msg => {
-          this.processedEmails.add(msg.id);
-        });
-        console.log(`✅ Marked ${response.data.messages.length} existing emails as processed (will be ignored)`);
+        const now = Date.now();
+        const fiveMinutesAgo = now - (5 * 60 * 1000);
+
+        let oldCount = 0;
+        let recentCount = 0;
+
+        for (const msg of response.data.messages) {
+          // Get full message to check timestamp
+          const fullMsg = await this.gmail.users.messages.get({
+            userId: 'me',
+            id: msg.id,
+            format: 'metadata',
+            metadataHeaders: ['Date']
+          });
+
+          const internalDate = parseInt(fullMsg.data.internalDate);
+
+          // Only mark as processed if older than 5 minutes
+          if (internalDate < fiveMinutesAgo) {
+            this.processedEmails.add(msg.id);
+            oldCount++;
+          } else {
+            recentCount++;
+            console.log(`📧 Found recent email (${msg.id}), will process it`);
+          }
+        }
+
+        console.log(`✅ Marked ${oldCount} old emails as processed, found ${recentCount} recent emails to process`);
       } else {
-        console.log('✅ No existing unread emails to mark');
+        console.log('✅ No existing unread emails');
       }
     } catch (error) {
-      console.error('⚠️  Error marking existing emails:', error.message);
-      // Don't fail - just continue without marking
+      console.error('⚠️  Error checking existing emails:', error.message);
+      // Don't fail - just continue
     }
   }
 
