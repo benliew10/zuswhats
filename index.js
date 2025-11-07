@@ -23,7 +23,9 @@ class WhatsAppBot {
       checkEmailInterval: parseInt(process.env.CHECK_EMAIL_INTERVAL) || 10000
     });
 
-    this.smsActivate = new SMSActivate(process.env.SMS_ACTIVATE_API_KEY);
+    const apiKey = process.env.SMS_ACTIVATE_API_KEY;
+    console.log(`🔑 SMS Activate API Key loaded: ${apiKey ? apiKey.substring(0, 8) + '...' : 'NOT SET'}`);
+    this.smsActivate = new SMSActivate(apiKey);
     this.conversationState = new ConversationState();
     this.paymentImagePath = process.env.PAYMENT_IMAGE_PATH || './payment-image.jpg';
     this.paymentNames = [];

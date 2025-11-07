@@ -12,7 +12,10 @@
       "Bash(npm start)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(node test-sms-api.js:*)",
+      "Bash(curl \"https://sms-activate.org/stubs/handler_api.php?api_key=bb67d66c0A6b9Ae29233e0AA5251127c&action=setStatus&status=8&id=4384440449\")",
+      "Bash(curl \"https://sms-activate.org/stubs/handler_api.php?api_key=bb67d66c0A6b9Ae29233e0AA5251127c&action=setStatus&status=8&id=4384440459\")"
     ],
     "deny": [],
     "ask": []
