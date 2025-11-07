@@ -231,8 +231,9 @@ After payment please send your NAME that appeared on the transaction receipt.
 
       const country = parseInt(process.env.SMS_ACTIVATE_COUNTRY) || 0;
       const service = process.env.SMS_ACTIVATE_SERVICE || 'wa';
+      const operator = process.env.SMS_ACTIVATE_OPERATOR || null;
 
-      const numberData = await this.smsActivate.getNumber(country, service);
+      const numberData = await this.smsActivate.getNumber(country, service, operator);
 
       const template3 = `PAYMENT VERIFIED!
 
