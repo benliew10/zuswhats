@@ -9,7 +9,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
-        value: 18.17.0
+        value: 20.11.0
       - key: WHATSAPP_SESSION_PATH
         value: ./baileys_auth
       - key: EMAIL_HOST
