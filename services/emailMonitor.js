@@ -67,8 +67,27 @@ class EmailMonitor {
   }
 
   async markExistingEmailsAsProcessed() {
-    // Don't mark anything on startup - just start monitoring for NEW emails
-    console.log('✅ Email monitoring ready - will process new incoming emails only');
+    try {
+      console.log('📧 Marking all existing emails as processed...');
+      const query = `from:${this.config.paymentEmailSender}`;
+
+      const response = await this.gmail.users.messages.list({
+        userId: 'me',
+        q: query,
+        maxResults: 100,
+      });
+
+      if (response.data.messages && response.data.messages.length > 0) {
+        response.data.messages.forEach(msg => {
+          this.processedEmails.add(msg.id);
+        });
+        console.log(`✅ Marked ${response.data.messages.length} existing emails as processed`);
+      } else {
+        console.log('✅ No existing emails from payment sender');
+      }
+    } catch (error) {
+      console.error('⚠️  Error marking existing emails:', error.message);
+    }
   }
 
   async getNewToken() {
@@ -343,7 +362,7 @@ class EmailMonitor {
           await this.refreshToken();
         }
       }
-    }, this.config.checkEmailInterval || 1000);
+    }, 1000); // Check every 1 second
   }
 
   stopMonitoring() {
