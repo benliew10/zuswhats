@@ -120,11 +120,6 @@ class WhatsAppBot {
                           message.message?.extendedTextMessage?.text || '';
       const messageBodyUpper = messageBody.trim().toUpperCase();
 
-      // Handle list/button responses
-      if (message.message?.listResponseMessage || message.message?.buttonsResponseMessage) {
-        await this.handlePollResponse(message, phoneNumber);
-        return;
-      }
 
       console.log(`\n📨 Message from ${phoneNumber}:`);
       console.log(`   Body: ${messageBody}`);
@@ -141,8 +136,55 @@ class WhatsAppBot {
 
         case 'awaiting_payment_keyword':
           if (messageBodyUpper === 'PAYMENT' || messageBodyUpper.includes('PAYMENT')) {
-            await this.sendServicePoll(phoneNumber);
+            const serviceMenu = `Please select your service by replying with the number:
+
+1️⃣ Zus Coffee - RM1.68
+2️⃣ Beutea - RM1.68
+3️⃣ Chagee - RM1.68
+4️⃣ Gigi Coffee - RM1.68
+5️⃣ Luckin Coffee - RM1.68
+6️⃣ Tealive - RM1.68
+7️⃣ Kenangan Coffee - RM1.68
+
+Reply with the number (1-7)`;
+            await this.sendMessage(phoneNumber, serviceMenu);
             this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
+          }
+          break;
+
+        case 'awaiting_service_selection':
+          const selection = messageBody.trim();
+          const serviceArray = [
+            'Zus Coffee',
+            'Beutea',
+            'Chagee',
+            'Gigi Coffee',
+            'Luckin Coffee',
+            'Tealive',
+            'Kenangan Coffee'
+          ];
+
+          let selectedServiceName = null;
+
+          // Try to match by number (1-7)
+          const num = parseInt(selection);
+          if (num >= 1 && num <= 7) {
+            selectedServiceName = serviceArray[num - 1];
+          } else {
+            // Try to match by name
+            for (const serviceName of serviceArray) {
+              if (messageBodyUpper.includes(serviceName.toUpperCase())) {
+                selectedServiceName = serviceName;
+                break;
+              }
+            }
+          }
+
+          if (selectedServiceName) {
+            const selectedService = SERVICES[selectedServiceName];
+            await this.sendOrderDetails(phoneNumber, selectedService);
+          } else {
+            await this.sendMessage(phoneNumber, '❌ Invalid selection. Please reply with a number from 1-7.');
           }
           break;
 
@@ -222,89 +264,23 @@ class WhatsAppBot {
     }
   }
 
-  async sendServicePoll(phoneNumber) {
-    const listMessage = await this.sock.sendMessage(phoneNumber, {
-      text: 'Please select your service:',
-      footer: 'TOPUPSTATION 24HRS AUTO BOT',
-      buttonText: 'Select Service',
-      sections: [{
-        title: 'Available Services',
-        rows: [
-          { title: 'Zus Coffee', description: 'RM1.68', rowId: 'service_zus' },
-          { title: 'Beutea', description: 'RM1.68', rowId: 'service_beutea' },
-          { title: 'Chagee', description: 'RM1.68', rowId: 'service_chagee' },
-          { title: 'Gigi Coffee', description: 'RM1.68', rowId: 'service_gigi' },
-          { title: 'Luckin Coffee', description: 'RM1.68', rowId: 'service_luckin' },
-          { title: 'Tealive', description: 'RM1.68', rowId: 'service_tealive' },
-          { title: 'Kenangan Coffee', description: 'RM1.68', rowId: 'service_kenangan' }
-        ]
-      }]
-    });
+  async sendOrderDetails(phoneNumber, selectedService) {
+    const currentState = this.conversationState.getState(phoneNumber);
 
-    // Store list message key for potential deletion
-    this.conversationState.setState(phoneNumber, {
-      listMessageKey: listMessage.key
-    });
-  }
-
-  async handlePollResponse(message, phoneNumber) {
-    try {
-      // Handle list response
-      const listResponse = message.message?.listResponseMessage;
-      const buttonResponse = message.message?.buttonsResponseMessage;
-
-      let rowId = null;
-
-      if (listResponse) {
-        rowId = listResponse.singleSelectReply?.selectedRowId;
-        console.log('📋 List response:', rowId);
-      } else if (buttonResponse) {
-        rowId = buttonResponse.selectedButtonId;
-        console.log('🔘 Button response:', rowId);
+    // Delete old order details message if exists
+    if (currentState.orderMessageKey) {
+      try {
+        await this.sock.sendMessage(phoneNumber, {
+          delete: currentState.orderMessageKey
+        });
+        console.log('🗑️ Deleted old order details message');
+      } catch (error) {
+        console.log('⚠️ Could not delete old message:', error.message);
       }
+    }
 
-      if (!rowId) {
-        console.log('⚠️ No valid response found');
-        return;
-      }
-
-      // Map rowId to service
-      const serviceMap = {
-        'service_zus': 'Zus Coffee',
-        'service_beutea': 'Beutea',
-        'service_chagee': 'Chagee',
-        'service_gigi': 'Gigi Coffee',
-        'service_luckin': 'Luckin Coffee',
-        'service_tealive': 'Tealive',
-        'service_kenangan': 'Kenangan Coffee'
-      };
-
-      const selectedServiceName = serviceMap[rowId];
-      const selectedService = SERVICES[selectedServiceName];
-
-      if (!selectedService) {
-        console.log(`❌ Could not find service for rowId ${rowId}`);
-        return;
-      }
-
-      console.log(`📊 Service selected: ${selectedServiceName}`);
-
-      const currentState = this.conversationState.getState(phoneNumber);
-
-      // Delete old order details message if exists
-      if (currentState.orderMessageKey) {
-        try {
-          await this.sock.sendMessage(phoneNumber, {
-            delete: currentState.orderMessageKey
-          });
-          console.log('🗑️ Deleted old order details message');
-        } catch (error) {
-          console.log('⚠️ Could not delete old message:', error.message);
-        }
-      }
-
-      // Send new order details
-      const orderDetails = `━━━━━━━━━━━━━━━━
+    // Send new order details
+    const orderDetails = `━━━━━━━━━━━━━━━━
 Here is your order details!
 
 Name: ${selectedService.name}
@@ -319,31 +295,27 @@ After payment please send your FULL NAME for verification purpose
 (Note: if you encounter the payment issue feel free to contact live agent)
 ━━━━━━━━━━━━━━━━`;
 
-      const orderMessage = await this.sendMessage(phoneNumber, orderDetails);
+    const orderMessage = await this.sendMessage(phoneNumber, orderDetails);
 
-      // Send payment QR image
-      if (existsSync(this.paymentImagePath)) {
-        try {
-          const imageBuffer = readFileSync(this.paymentImagePath);
-          await this.sock.sendMessage(phoneNumber, {
-            image: imageBuffer,
-            caption: 'GXBank Payment QR Code'
-          });
-        } catch (error) {
-          console.error('❌ Error sending payment image:', error.message);
-        }
+    // Send payment QR image
+    if (existsSync(this.paymentImagePath)) {
+      try {
+        const imageBuffer = readFileSync(this.paymentImagePath);
+        await this.sock.sendMessage(phoneNumber, {
+          image: imageBuffer,
+          caption: 'GXBank Payment QR Code'
+        });
+      } catch (error) {
+        console.error('❌ Error sending payment image:', error.message);
       }
-
-      // Update state with selected service and order message key
-      this.conversationState.setState(phoneNumber, {
-        step: 'waiting_for_payment',
-        selectedService: selectedService,
-        orderMessageKey: orderMessage.key
-      });
-
-    } catch (error) {
-      console.error('❌ Error handling poll response:', error);
     }
+
+    // Update state with selected service and order message key
+    this.conversationState.setState(phoneNumber, {
+      step: 'waiting_for_payment',
+      selectedService: selectedService,
+      orderMessageKey: orderMessage.key
+    });
   }
 
   async sendMessage(jid, text) {
