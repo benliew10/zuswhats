@@ -125,63 +125,61 @@ class EmailMonitor {
 
   async checkForPayment() {
     try {
-      // Search for unread emails from the payment sender
-      const query = `is:unread from:${this.config.paymentEmailSender}`;
+      // Search for ALL emails from the payment sender (don't care about read/unread)
+      const query = `from:${this.config.paymentEmailSender}`;
 
       const response = await this.gmail.users.messages.list({
         userId: 'me',
         q: query,
-        maxResults: 1,
+        maxResults: 10, // Get recent emails
       });
 
       if (!response.data.messages || response.data.messages.length === 0) {
-        // Log periodically to show monitoring is active
-        if (Math.random() < 0.01) { // Log ~1% of checks
-          console.log('📧 Email check: No new unread emails from payment sender');
-        }
         return null;
       }
 
-      // Get the most recent email
-      const messageId = response.data.messages[0].id;
+      // Check all recent emails to find any we haven't processed yet
+      for (const msg of response.data.messages) {
+        const messageId = msg.id;
 
-      // Check if already processed
-      if (this.processedEmails.has(messageId)) {
-        console.log('📧 Email found but already processed:', messageId);
-        return null;
-      }
+        // If we haven't processed this one yet, process it
+        if (!this.processedEmails.has(messageId)) {
+          console.log('🆕 NEW payment email found! Processing...', messageId);
 
-      console.log('🆕 NEW unread payment email found! Processing...');
+          const message = await this.gmail.users.messages.get({
+            userId: 'me',
+            id: messageId,
+            format: 'full',
+          });
 
-      const message = await this.gmail.users.messages.get({
-        userId: 'me',
-        id: messageId,
-        format: 'full',
-      });
+          // Parse email data
+          const emailData = this.parseEmail(message.data);
 
-      // Parse email data
-      const emailData = this.parseEmail(message.data);
+          // Mark as processed in our tracking
+          this.processedEmails.add(messageId);
 
-      // Mark as processed in our tracking
-      this.processedEmails.add(messageId);
+          // Try to mark as read (optional - won't fail if permission denied)
+          try {
+            await this.gmail.users.messages.modify({
+              userId: 'me',
+              id: messageId,
+              requestBody: {
+                removeLabelIds: ['UNREAD'],
+              },
+            });
+          } catch (error) {
+            // Ignore permission errors
+            if (error.code !== 403) {
+              console.error('Error marking email as read:', error.message);
+            }
+          }
 
-      // Try to mark as read (optional - won't fail if permission denied)
-      try {
-        await this.gmail.users.messages.modify({
-          userId: 'me',
-          id: messageId,
-          requestBody: {
-            removeLabelIds: ['UNREAD'],
-          },
-        });
-      } catch (error) {
-        // Ignore permission errors - email will remain unread but bot will track processed emails
-        if (error.code !== 403) {
-          console.error('Error marking email as read:', error.message);
+          return emailData;
         }
       }
 
-      return emailData;
+      // All emails already processed
+      return null;
     } catch (error) {
       console.error('Error checking email:', error);
       return null;
