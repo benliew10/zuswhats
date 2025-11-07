@@ -18,6 +18,16 @@ const SERVICES = {
   'Kenangan Coffee': { name: 'Kenangan Coffee', code: 'ot', price: 'RM1.68' }
 };
 
+const SERVICE_ID_MAP = {
+  'zus_coffee': 'Zus Coffee',
+  'beutea': 'Beutea',
+  'chagee': 'Chagee',
+  'gigi_coffee': 'Gigi Coffee',
+  'luckin_coffee': 'Luckin Coffee',
+  'tealive': 'Tealive',
+  'kenangan_coffee': 'Kenangan Coffee'
+};
+
 class WhatsAppBot {
   constructor() {
     this.whatsappAPI = new WhatsAppBusinessAPI(
@@ -52,7 +62,7 @@ class WhatsAppBot {
     const parsedMessage = this.whatsappAPI.parseWebhookMessage(webhookData);
     if (!parsedMessage) return;
 
-    const { from, messageId, body } = parsedMessage;
+    const { from, messageId, body, interactiveId } = parsedMessage;
 
     // Deduplicate messages
     if (this.processedMessages.has(messageId)) {
@@ -72,15 +82,18 @@ class WhatsAppBot {
     await this.whatsappAPI.markAsRead(messageId);
 
     // Handle message
-    await this.handleMessage(from, body);
+    await this.handleMessage(from, body, interactiveId);
   }
 
-  async handleMessage(phoneNumber, messageBody) {
+  async handleMessage(phoneNumber, messageBody, interactiveId = null) {
     try {
       const messageBodyUpper = messageBody.trim().toUpperCase();
 
       console.log(`📨 Message from ${phoneNumber}:`);
       console.log(`   Body: ${messageBody}`);
+      if (interactiveId) {
+        console.log(`   Interactive ID: ${interactiveId}`);
+      }
 
       const state = this.conversationState.getState(phoneNumber);
       console.log(`   Current state: ${state.step}`);
@@ -89,19 +102,26 @@ class WhatsAppBot {
         case 'idle':
         case 'awaiting_payment_keyword':
           if (messageBodyUpper === 'PAYMENT' || messageBodyUpper.includes('PAYMENT')) {
-            const serviceMenu = `Please select your service by replying with the number:
-
-1️⃣ Zus Coffee - RM1.68
-2️⃣ Beutea - RM1.68
-3️⃣ Chagee - RM1.68
-4️⃣ Gigi Coffee - RM1.68
-5️⃣ Luckin Coffee - RM1.68
-6️⃣ Tealive - RM1.68
-7️⃣ Kenangan Coffee - RM1.68
-
-Reply with the number (1-7)`;
-
-            await this.sendMessage(phoneNumber, serviceMenu);
+            // Send interactive list with service options
+            await this.whatsappAPI.sendListMessage(
+              phoneNumber,
+              'Please select your service:',
+              'Select Service',
+              [
+                {
+                  title: 'Services',
+                  rows: [
+                    { id: 'zus_coffee', title: 'Zus Coffee', description: 'RM1.68' },
+                    { id: 'beutea', title: 'Beutea', description: 'RM1.68' },
+                    { id: 'chagee', title: 'Chagee', description: 'RM1.68' },
+                    { id: 'gigi_coffee', title: 'Gigi Coffee', description: 'RM1.68' },
+                    { id: 'luckin_coffee', title: 'Luckin Coffee', description: 'RM1.68' },
+                    { id: 'tealive', title: 'Tealive', description: 'RM1.68' },
+                    { id: 'kenangan_coffee', title: 'Kenangan Coffee', description: 'RM1.68' }
+                  ]
+                }
+              ]
+            );
             this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
           } else {
             await this.sendMessage(phoneNumber, 'Please reply "PAYMENT" to start the process.');
@@ -109,36 +129,47 @@ Reply with the number (1-7)`;
           break;
 
         case 'awaiting_service_selection':
-          const selection = messageBody.trim();
-          const serviceArray = [
-            'Zus Coffee',
-            'Beutea',
-            'Chagee',
-            'Gigi Coffee',
-            'Luckin Coffee',
-            'Tealive',
-            'Kenangan Coffee'
-          ];
-
           let selectedServiceName = null;
 
-          const num = parseInt(selection);
-          if (num >= 1 && num <= 7) {
-            selectedServiceName = serviceArray[num - 1];
-          } else {
-            for (const serviceName of serviceArray) {
-              if (messageBodyUpper.includes(serviceName.toUpperCase())) {
-                selectedServiceName = serviceName;
-                break;
-              }
-            }
+          // Check if user selected from interactive list
+          if (interactiveId && SERVICE_ID_MAP[interactiveId]) {
+            selectedServiceName = SERVICE_ID_MAP[interactiveId];
+            console.log(`✅ Service selected from list: ${selectedServiceName}`);
           }
 
           if (selectedServiceName) {
             const selectedService = SERVICES[selectedServiceName];
+
+            // Delete old order message if exists
+            const currentState = this.conversationState.getState(phoneNumber);
+            if (currentState.orderMessageId) {
+              console.log(`🗑️ Deleting old order message: ${currentState.orderMessageId}`);
+              await this.whatsappAPI.deleteMessage(phoneNumber, currentState.orderMessageId);
+            }
+
+            // Send new order details and store message ID
             await this.sendOrderDetails(phoneNumber, selectedService);
           } else {
-            await this.sendMessage(phoneNumber, '❌ Invalid selection. Please reply with a number from 1-7.');
+            // User didn't select from list - send list again
+            await this.whatsappAPI.sendListMessage(
+              phoneNumber,
+              'Please select your service from the list:',
+              'Select Service',
+              [
+                {
+                  title: 'Services',
+                  rows: [
+                    { id: 'zus_coffee', title: 'Zus Coffee', description: 'RM1.68' },
+                    { id: 'beutea', title: 'Beutea', description: 'RM1.68' },
+                    { id: 'chagee', title: 'Chagee', description: 'RM1.68' },
+                    { id: 'gigi_coffee', title: 'Gigi Coffee', description: 'RM1.68' },
+                    { id: 'luckin_coffee', title: 'Luckin Coffee', description: 'RM1.68' },
+                    { id: 'tealive', title: 'Tealive', description: 'RM1.68' },
+                    { id: 'kenangan_coffee', title: 'Kenangan Coffee', description: 'RM1.68' }
+                  ]
+                }
+              ]
+            );
           }
           break;
 
@@ -232,11 +263,15 @@ After payment please send your FULL NAME for verification purpose
 (Note: if you encounter the payment issue feel free to contact live agent)
 ━━━━━━━━━━━━━━━━`;
 
-    await this.sendMessage(phoneNumber, orderDetails);
+    const response = await this.whatsappAPI.sendMessage(phoneNumber, orderDetails);
+    const orderMessageId = response?.messages?.[0]?.id;
+
+    console.log(`📋 Order details sent, message ID: ${orderMessageId}`);
 
     this.conversationState.setState(phoneNumber, {
       step: 'waiting_for_payment',
-      selectedService: selectedService
+      selectedService: selectedService,
+      orderMessageId: orderMessageId
     });
   }
 
@@ -363,18 +398,26 @@ After payment please send your FULL NAME for verification purpose
 
         this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
 
-        const serviceMenu = `Please select your service by replying with the number:
-
-1️⃣ Zus Coffee - RM1.68
-2️⃣ Beutea - RM1.68
-3️⃣ Chagee - RM1.68
-4️⃣ Gigi Coffee - RM1.68
-5️⃣ Luckin Coffee - RM1.68
-6️⃣ Tealive - RM1.68
-7️⃣ Kenangan Coffee - RM1.68
-
-Reply with the number (1-7)`;
-        await this.sendMessage(phoneNumber, serviceMenu);
+        // Send interactive list for service selection
+        await this.whatsappAPI.sendListMessage(
+          phoneNumber,
+          'Please select a different service:',
+          'Select Service',
+          [
+            {
+              title: 'Services',
+              rows: [
+                { id: 'zus_coffee', title: 'Zus Coffee', description: 'RM1.68' },
+                { id: 'beutea', title: 'Beutea', description: 'RM1.68' },
+                { id: 'chagee', title: 'Chagee', description: 'RM1.68' },
+                { id: 'gigi_coffee', title: 'Gigi Coffee', description: 'RM1.68' },
+                { id: 'luckin_coffee', title: 'Luckin Coffee', description: 'RM1.68' },
+                { id: 'tealive', title: 'Tealive', description: 'RM1.68' },
+                { id: 'kenangan_coffee', title: 'Kenangan Coffee', description: 'RM1.68' }
+              ]
+            }
+          ]
+        );
       } else {
         await this.sendMessage(phoneNumber, `❌ Error: ${error.message}. Please try again or contact live agent.`);
       }

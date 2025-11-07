@@ -32,6 +32,54 @@ class WhatsAppBusinessAPI {
     }
   }
 
+  async sendListMessage(to, bodyText, buttonText, sections) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/${this.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: to,
+          type: 'interactive',
+          interactive: {
+            type: 'list',
+            body: { text: bodyText },
+            action: {
+              button: buttonText,
+              sections: sections
+            }
+          }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      console.log(`✅ List message sent to ${to}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error sending list message:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
+  async deleteMessage(to, messageId) {
+    try {
+      await axios.delete(
+        `${this.baseUrl}/${this.phoneNumberId}/messages/${messageId}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`
+          }
+        }
+      );
+      console.log(`✅ Message ${messageId} deleted`);
+    } catch (error) {
+      console.error('❌ Error deleting message:', error.response?.data || error.message);
+    }
+  }
+
   async markAsRead(messageId) {
     try {
       await axios.post(
@@ -70,6 +118,8 @@ class WhatsAppBusinessAPI {
       const timestamp = message.timestamp;
 
       let body = '';
+      let interactiveId = null;
+
       if (message.type === 'text') {
         body = message.text?.body || '';
       } else if (message.type === 'button') {
@@ -77,8 +127,10 @@ class WhatsAppBusinessAPI {
       } else if (message.type === 'interactive') {
         if (message.interactive?.type === 'button_reply') {
           body = message.interactive.button_reply?.title || '';
+          interactiveId = message.interactive.button_reply?.id || null;
         } else if (message.interactive?.type === 'list_reply') {
           body = message.interactive.list_reply?.title || '';
+          interactiveId = message.interactive.list_reply?.id || null;
         }
       }
 
@@ -86,6 +138,7 @@ class WhatsAppBusinessAPI {
         from,
         messageId,
         body,
+        interactiveId,
         timestamp
       };
     } catch (error) {
