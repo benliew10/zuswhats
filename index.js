@@ -140,14 +140,7 @@ class WhatsAppBot {
           if (selectedServiceName) {
             const selectedService = SERVICES[selectedServiceName];
 
-            // Delete old order message if exists
-            const currentState = this.conversationState.getState(phoneNumber);
-            if (currentState.orderMessageId) {
-              console.log(`🗑️ Deleting old order message: ${currentState.orderMessageId}`);
-              await this.whatsappAPI.deleteMessage(phoneNumber, currentState.orderMessageId);
-            }
-
-            // Send new order details and store message ID
+            // Send order details
             await this.sendOrderDetails(phoneNumber, selectedService);
           } else {
             // User didn't select from list - send list again
@@ -180,13 +173,9 @@ class WhatsAppBot {
             console.log(`🔄 Customer changing service to: ${newServiceName}`);
 
             const newService = SERVICES[newServiceName];
-            const currentState = this.conversationState.getState(phoneNumber);
 
-            // Delete old order message if exists
-            if (currentState.orderMessageId) {
-              console.log(`🗑️ Deleting old order message: ${currentState.orderMessageId}`);
-              await this.whatsappAPI.deleteMessage(phoneNumber, currentState.orderMessageId);
-            }
+            // Note: WhatsApp Business API doesn't support deleting messages sent by businesses
+            // Customer will see both order details, but new one will be sent
 
             // Send new order details
             await this.sendOrderDetails(phoneNumber, newService);
@@ -283,15 +272,11 @@ After payment please send your FULL NAME for verification purpose
 (Note: if you encounter the payment issue feel free to contact live agent)
 ━━━━━━━━━━━━━━━━`;
 
-    const response = await this.whatsappAPI.sendMessage(phoneNumber, orderDetails);
-    const orderMessageId = response?.messages?.[0]?.id;
-
-    console.log(`📋 Order details sent, message ID: ${orderMessageId}`);
+    await this.sendMessage(phoneNumber, orderDetails);
 
     this.conversationState.setState(phoneNumber, {
       step: 'waiting_for_payment',
-      selectedService: selectedService,
-      orderMessageId: orderMessageId
+      selectedService: selectedService
     });
   }
 
@@ -338,16 +323,15 @@ After payment please send your FULL NAME for verification purpose
 
       await this.sendMessage(
         phoneNumber,
-        `✅ ${selectedService.name} Verification\n\n` +
-        `📞 Phone Number: +${phoneNumberReceived}\n` +
-        `🔢 Activation ID: ${activationId}\n\n` +
-        `⏳ Waiting for verification code...\n` +
-        `(This may take 1-5 minutes)\n\n` +
-        `⚠️ After 2 minutes, you can request a new number by typing "CHANGE"`
+        `PAYMENT VERIFIED!\n` +
+        `Name: ${selectedService.name}\n` +
+        `NUMBER: ${phoneNumberReceived}\n` +
+        `Waiting for SMS……\n` +
+        `The code will sent automatically\n` +
+        `Note: You can change the number after 2 minutes if there is no code coming, type 'Change' for a new number`
       );
 
       let codeReceived = false;
-      let messageCount = 0;
 
       const checkCodeInterval = setInterval(async () => {
         try {
@@ -377,12 +361,8 @@ After payment please send your FULL NAME for verification purpose
             clearInterval(checkCodeInterval);
             await this.sendMessage(phoneNumber, '❌ Activation cancelled.');
             this.conversationState.resetState(phoneNumber);
-          } else {
-            messageCount++;
-            if (messageCount % 15 === 0) {
-              await this.sendMessage(phoneNumber, '⏳ Still waiting for code...');
-            }
           }
+          // Removed periodic "still waiting for code" message
         } catch (error) {
           console.error('❌ Error checking code:', error);
           clearInterval(checkCodeInterval);
@@ -418,7 +398,6 @@ After payment please send your FULL NAME for verification purpose
 
         this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
 
-        // Send interactive list for service selection
         await this.whatsappAPI.sendListMessage(
           phoneNumber,
           'Please select a different service:',
