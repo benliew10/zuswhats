@@ -39,11 +39,17 @@ class SMSActivate {
       }
 
       console.log(`📱 SMS Activate API Request: country=${country}, service=${service}, operator=${operator}`);
+      console.log(`📱 Full API URL: ${this.baseUrl}?${new URLSearchParams(params).toString()}`);
 
       const response = await axios.get(this.baseUrl, { params });
 
+      console.log(`📱 Response status: ${response.status}`);
+      console.log(`📱 Response headers:`, response.headers);
+      console.log(`📱 Response data type: ${typeof response.data}`);
+      console.log(`📱 Response data length: ${response.data?.length}`);
+
       const data = response.data;
-      console.log(`📱 SMS Activate API Response: ${data}`);
+      console.log(`📱 SMS Activate API Response: "${data}"`);
 
       if (data.includes('ACCESS_NUMBER')) {
         const parts = data.split(':');
