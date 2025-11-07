@@ -34,4 +34,6 @@ services:
       # - SMS_ACTIVATE_API_KEY
       # - GMAIL_CREDENTIALS_PATH (./credentials.json)
       # - GMAIL_TOKEN_PATH (./token.json)
+      # - WHATSAPP_PHONE_NUMBER (optional: your WhatsApp phone number with country code, e.g., 60123456789)
+      #   If set, you'll get a pairing code instead of QR code (easier for cloud deployment!)
     autoDeploy: true

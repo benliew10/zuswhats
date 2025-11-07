@@ -58,7 +58,11 @@ class WhatsAppBot {
     this.client = new Client({
       authStrategy: authStrategy,
       puppeteer: puppeteerConfig,
-      authTimeoutMs: 0 // Disable auth timeout
+      authTimeoutMs: 0, // Disable auth timeout
+      // Enable pairing code (phone number linking)
+      // Set your phone number in environment variable WHATSAPP_PHONE_NUMBER
+      // Format: country code without + (e.g., 60123456789 for Malaysia)
+      qrMaxRetries: 5
     });
 
     this.emailMonitor = new EmailMonitor({
@@ -82,11 +86,26 @@ class WhatsAppBot {
   }
 
   setupEventHandlers() {
-    // QR Code generation
+    // QR Code generation (fallback)
     this.client.on('qr', (qr) => {
       console.log('\n📱 QR CODE RECEIVED - SCAN THIS WITH YOUR PHONE:\n');
       qrcode.generate(qr, { small: true });
       console.log('\n👆 Open WhatsApp on your phone → Settings → Linked Devices → Link a Device\n');
+    });
+
+    // Pairing code for phone number linking (better for cloud deployment)
+    this.client.on('code', (code) => {
+      console.log('\n🔐 PAIRING CODE RECEIVED:\n');
+      console.log('════════════════════════════');
+      console.log(`   ${code}   `);
+      console.log('════════════════════════════');
+      console.log('\n📱 To link your WhatsApp:');
+      console.log('1. Open WhatsApp on your phone');
+      console.log('2. Go to Settings → Linked Devices');
+      console.log('3. Tap "Link a Device"');
+      console.log('4. Tap "Link with phone number instead"');
+      console.log('5. Enter this code: ' + code);
+      console.log('\n');
     });
 
     // Client ready
@@ -498,8 +517,27 @@ Note: You can change the number after 2 minutes if there is no code coming, type
       console.log('⏳ This will take 30-60 seconds, please wait...');
       console.log('💡 The browser runs in the background (headless mode)\n');
 
-      // Just initialize without timeout - let it take its time
-      await this.client.initialize();
+      // Request pairing code if phone number is provided
+      if (process.env.WHATSAPP_PHONE_NUMBER) {
+        console.log('📱 Phone number provided - will request pairing code');
+        console.log('   Phone: ' + process.env.WHATSAPP_PHONE_NUMBER);
+
+        // Initialize and request pairing code
+        await this.client.initialize();
+
+        // After initialization starts, request pairing code
+        try {
+          await this.client.requestPairingCode(process.env.WHATSAPP_PHONE_NUMBER);
+          console.log('✅ Pairing code requested for: ' + process.env.WHATSAPP_PHONE_NUMBER);
+        } catch (pairingError) {
+          console.log('⚠️  Pairing code request failed, will show QR code instead');
+          console.log('   Error:', pairingError.message);
+        }
+      } else {
+        console.log('📱 No phone number provided - will show QR code');
+        console.log('   (Set WHATSAPP_PHONE_NUMBER env var to use pairing code instead)');
+        await this.client.initialize();
+      }
 
     } catch (error) {
       console.error('❌ Failed to initialize WhatsApp client');
