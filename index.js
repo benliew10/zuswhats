@@ -124,7 +124,7 @@ class WhatsAppBot {
             );
             this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
           } else {
-            await this.sendMessage(phoneNumber, 'Please reply "PAYMENT" to start the process.');
+            await this.sendMessage(phoneNumber, '━━━━━━━━━━━━━━━━\n👋 Welcome!\n\nPlease reply "PAYMENT" to start the process.\n━━━━━━━━━━━━━━━━');
           }
           break;
 
@@ -208,7 +208,7 @@ class WhatsAppBot {
               timestamp: Date.now()
             });
 
-            await this.sendMessage(phoneNumber, '✅ Name received! Once payment is confirmed, your number will be sent automatically.\n\nIf you already made payment 5 mins ago and you don\'t receive the number, please contact live agent.');
+            await this.sendMessage(phoneNumber, '━━━━━━━━━━━━━━━━\n✅ Name received!\n\nOnce payment is confirmed, your number will be sent automatically.\n\n⚠️ If you already made payment 5 mins ago and you don\'t receive the number, please contact live agent.\n━━━━━━━━━━━━━━━━');
 
             setTimeout(() => {
               if (this.pendingNames.has(phoneNumber)) {
@@ -224,7 +224,7 @@ class WhatsAppBot {
             const currentState = state;
 
             if (!currentState.numberSentTimestamp) {
-              await this.sendMessage(phoneNumber, '❌ No active number to cancel.');
+              await this.sendMessage(phoneNumber, '━━━━━━━━━━━━━━━━\n❌ No active number to cancel.\n━━━━━━━━━━━━━━━━');
               this.conversationState.resetState(phoneNumber);
               break;
             }
@@ -234,11 +234,11 @@ class WhatsAppBot {
 
             if (elapsedTime < twoMinutes) {
               const remainingSeconds = Math.ceil((twoMinutes - elapsedTime) / 1000);
-              await this.sendMessage(phoneNumber, `⏳ Please wait ${remainingSeconds} more seconds before requesting a new number.`);
+              await this.sendMessage(phoneNumber, `━━━━━━━━━━━━━━━━\n⏳ Please wait ${remainingSeconds} more seconds before requesting a new number.\n━━━━━━━━━━━━━━━━`);
             } else {
               if (currentState.activationId) {
                 await this.smsActivate.releaseNumber(currentState.activationId);
-                await this.sendMessage(phoneNumber, '⏳ Cancelling old number and getting a new one...');
+                await this.sendMessage(phoneNumber, '━━━━━━━━━━━━━━━━\n⏳ Cancelling old number and getting a new one...\n\nPlease wait\n━━━━━━━━━━━━━━━━');
                 await this.processActivation(phoneNumber);
               }
             }
@@ -258,17 +258,31 @@ class WhatsAppBot {
 
   async sendOrderDetails(phoneNumber, selectedService) {
     const orderDetails = `━━━━━━━━━━━━━━━━
-Here is your order details!
+📋 Here is your order details!
+━━━━━━━━━━━━━━━━
 
-Name: ${selectedService.name}
-Cost: ${selectedService.price}
+📝 Name: ${selectedService.name}
+💰 Cost: ${selectedService.price}
+
+━━━━━━━━━━━━━━━━
+⚠️ IMPORTANT ⚠️
+━━━━━━━━━━━━━━━━
 
 Please pay the exact number RM1.68 ONLY
 PAY MORE OR LESS YOUR PAYMENT WILL NOT PROCESS
 
+━━━━━━━━━━━━━━━━
+💳 Payment Details
+━━━━━━━━━━━━━━━━
+
 Transfer to GXBank: 018-2804099
 
+━━━━━━━━━━━━━━━━
+📌 Next Step
+━━━━━━━━━━━━━━━━
+
 After payment please send your FULL NAME for verification purpose
+
 (Note: if you encounter the payment issue feel free to contact live agent)
 ━━━━━━━━━━━━━━━━`;
 
@@ -323,12 +337,13 @@ After payment please send your FULL NAME for verification purpose
 
       await this.sendMessage(
         phoneNumber,
-        `PAYMENT VERIFIED!\n` +
-        `Name: ${selectedService.name}\n` +
-        `NUMBER: ${phoneNumberReceived}\n` +
-        `Waiting for SMS……\n` +
-        `The code will sent automatically\n` +
-        `Note: You can change the number after 2 minutes if there is no code coming, type 'Change' for a new number`
+        `━━━━━━━━━━━━━━━━\n✅ PAYMENT VERIFIED!\n━━━━━━━━━━━━━━━━\n\n` +
+        `📝 Name: ${selectedService.name}\n` +
+        `📱 NUMBER: ${phoneNumberReceived}\n\n` +
+        `⏳ Waiting for SMS……\n` +
+        `The code will sent automatically\n\n` +
+        `📌 Note: You can change the number after 2 minutes if there is no code coming, type 'Change' for a new number\n` +
+        `━━━━━━━━━━━━━━━━`
       );
 
       let codeReceived = false;
@@ -349,24 +364,24 @@ After payment please send your FULL NAME for verification purpose
 
             await this.sendMessage(
               phoneNumber,
-              `✅ ${selectedService.name} Verification Code Received!\n\n` +
+              `━━━━━━━━━━━━━━━━\n✅ ${selectedService.name} Verification Code Received!\n━━━━━━━━━━━━━━━━\n\n` +
               `🔐 Code: ${verificationCode}\n\n` +
               `📱 Full Message:\n${fullMessage}\n\n` +
-              `Thank you for your order!`
+              `━━━━━━━━━━━━━━━━\n💚 Thank you for your order!\n━━━━━━━━━━━━━━━━`
             );
 
             this.conversationState.resetState(phoneNumber);
           } else if (status.status === 'cancelled') {
             codeReceived = true;
             clearInterval(checkCodeInterval);
-            await this.sendMessage(phoneNumber, '❌ Activation cancelled.');
+            await this.sendMessage(phoneNumber, '━━━━━━━━━━━━━━━━\n❌ Activation cancelled.\n━━━━━━━━━━━━━━━━');
             this.conversationState.resetState(phoneNumber);
           }
           // Removed periodic "still waiting for code" message
         } catch (error) {
           console.error('❌ Error checking code:', error);
           clearInterval(checkCodeInterval);
-          await this.sendMessage(phoneNumber, `❌ Error: ${error.message}`);
+          await this.sendMessage(phoneNumber, `━━━━━━━━━━━━━━━━\n❌ Error: ${error.message}\n━━━━━━━━━━━━━━━━`);
           this.conversationState.resetState(phoneNumber);
         }
       }, 2000);
@@ -374,7 +389,7 @@ After payment please send your FULL NAME for verification purpose
       const timeoutId = setTimeout(async () => {
         if (!codeReceived) {
           clearInterval(checkCodeInterval);
-          await this.sendMessage(phoneNumber, '⏰ Timeout: No code received within 5 minutes.');
+          await this.sendMessage(phoneNumber, '━━━━━━━━━━━━━━━━\n⏰ Timeout: No code received within 5 minutes.\n━━━━━━━━━━━━━━━━');
           this.conversationState.resetState(phoneNumber);
         }
       }, 5 * 60 * 1000);
@@ -394,7 +409,7 @@ After payment please send your FULL NAME for verification purpose
         const currentState = this.conversationState.getState(phoneNumber);
         const selectedService = currentState.selectedService;
 
-        await this.sendMessage(phoneNumber, `❌ Sorry, ${selectedService.name} service is temporarily unavailable due to insufficient phone numbers.\n\nPlease select a different service or contact live agent.`);
+        await this.sendMessage(phoneNumber, `━━━━━━━━━━━━━━━━\n❌ Sorry, ${selectedService.name} service is temporarily unavailable due to insufficient phone numbers.\n\nPlease select a different service or contact live agent.\n━━━━━━━━━━━━━━━━`);
 
         this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
 
@@ -418,7 +433,7 @@ After payment please send your FULL NAME for verification purpose
           ]
         );
       } else {
-        await this.sendMessage(phoneNumber, `❌ Error: ${error.message}. Please try again or contact live agent.`);
+        await this.sendMessage(phoneNumber, `━━━━━━━━━━━━━━━━\n❌ Error: ${error.message}\n\nPlease try again or contact live agent.\n━━━━━━━━━━━━━━━━`);
       }
     }
   }
@@ -448,7 +463,7 @@ After payment please send your FULL NAME for verification purpose
 
             if (matchedPending) {
               this.pendingNames.delete(matchedPending.phoneNumber);
-              await this.sendMessage(matchedPending.phoneNumber, '✅ Payment verified! Processing your request now...');
+              await this.sendMessage(matchedPending.phoneNumber, '━━━━━━━━━━━━━━━━\n✅ Payment verified!\n\nProcessing your request now...\n━━━━━━━━━━━━━━━━');
               await this.processActivation(matchedPending.phoneNumber);
             } else {
               this.paymentNames.push(paymentData);
