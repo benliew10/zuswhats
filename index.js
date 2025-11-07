@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion, getAggregateVotesInPollMessage } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, useMultiFileAuthState, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
 import qrcode from 'qrcode-terminal';
 import express from 'express';
 import pino from 'pino';
@@ -41,7 +41,6 @@ class WhatsAppBot {
     this.paymentNames = [];
     this.pendingNames = new Map(); // Store names temporarily before email arrives
     this.processedMessages = new Set(); // Track processed message IDs to avoid duplicates
-    this.pollMessages = new Map(); // Store poll messages for vote decryption
   }
 
   async connectToWhatsApp() {
@@ -110,12 +109,6 @@ class WhatsAppBot {
         this.processedMessages = new Set(arr.slice(-1000));
       }
 
-      // Handle poll updates (poll responses)
-      if (message.message?.pollUpdateMessage) {
-        await this.handlePollResponse(message);
-        return;
-      }
-
       await this.handleMessage(message);
     });
   }
@@ -143,38 +136,57 @@ class WhatsAppBot {
 
         case 'awaiting_payment_keyword':
           if (messageBodyUpper === 'PAYMENT' || messageBodyUpper.includes('PAYMENT')) {
-            // Send poll with 7 service options
-            const pollMessage = await this.sock.sendMessage(phoneNumber, {
-              poll: {
-                name: 'Please select your service:',
-                values: [
-                  'Zus Coffee - RM1.68',
-                  'Beutea - RM1.68',
-                  'Chagee - RM1.68',
-                  'Gigi Coffee - RM1.68',
-                  'Luckin Coffee - RM1.68',
-                  'Tealive - RM1.68',
-                  'Kenangan Coffee - RM1.68'
-                ],
-                selectableCount: 1
-              }
-            });
+            // Send numbered service list
+            const serviceMenu = `Please select your service by replying with the number:
 
-            // Store the full poll message for vote decryption
-            this.pollMessages.set(pollMessage.key.id, pollMessage);
+1️⃣ Zus Coffee - RM1.68
+2️⃣ Beutea - RM1.68
+3️⃣ Chagee - RM1.68
+4️⃣ Gigi Coffee - RM1.68
+5️⃣ Luckin Coffee - RM1.68
+6️⃣ Tealive - RM1.68
+7️⃣ Kenangan Coffee - RM1.68
 
-            // Store poll message key for later reference
-            this.conversationState.setState(phoneNumber, {
-              step: 'awaiting_service_selection',
-              pollMessageKey: pollMessage.key
-            });
+Reply with the number (1-7)`;
+            await this.sendMessage(phoneNumber, serviceMenu);
+            this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
           }
           break;
 
         case 'awaiting_service_selection':
-          // This case is now handled by poll responses
-          // If user sends text message, ask them to use the poll
-          await this.sendMessage(phoneNumber, 'Please select your service from the poll above.');
+          const selection = messageBody.trim();
+          const serviceArray = [
+            'Zus Coffee',
+            'Beutea',
+            'Chagee',
+            'Gigi Coffee',
+            'Luckin Coffee',
+            'Tealive',
+            'Kenangan Coffee'
+          ];
+
+          let selectedServiceName = null;
+
+          // Try to match by number (1-7)
+          const num = parseInt(selection);
+          if (num >= 1 && num <= 7) {
+            selectedServiceName = serviceArray[num - 1];
+          } else {
+            // Try to match by name
+            for (const serviceName of serviceArray) {
+              if (messageBodyUpper.includes(serviceName.toUpperCase())) {
+                selectedServiceName = serviceName;
+                break;
+              }
+            }
+          }
+
+          if (selectedServiceName) {
+            const selectedService = SERVICES[selectedServiceName];
+            await this.sendOrderDetails(phoneNumber, selectedService);
+          } else {
+            await this.sendMessage(phoneNumber, '❌ Invalid selection. Please reply with a number from 1-7.');
+          }
           break;
 
         case 'waiting_for_payment':
@@ -250,117 +262,6 @@ class WhatsAppBot {
       }
     } catch (error) {
       console.error('❌ Error handling message:', error);
-    }
-  }
-
-  async handlePollResponse(message) {
-    try {
-      const phoneNumber = message.key.remoteJid;
-      const pollUpdate = message.message.pollUpdateMessage;
-
-      console.log(`\n📊 Poll response from ${phoneNumber}`);
-
-      const state = this.conversationState.getState(phoneNumber);
-
-      // Only process poll responses when in awaiting_service_selection state
-      if (state.step !== 'awaiting_service_selection') {
-        console.log('⏭️ Ignoring poll response - not in correct state');
-        return;
-      }
-
-      // Get the original poll message from our store
-      const pollCreationMessageKey = pollUpdate.pollCreationMessageKey;
-      const pollMessageData = this.pollMessages.get(pollCreationMessageKey.id);
-
-      if (!pollMessageData) {
-        console.log('❌ Could not find stored poll message');
-        return;
-      }
-
-      console.log(`   Found stored poll message with ID: ${pollCreationMessageKey.id}`);
-
-      // Track poll updates per poll
-      if (!pollMessageData.updates) {
-        pollMessageData.updates = [];
-      }
-      pollMessageData.updates.push(message);
-
-      // Decrypt the votes using Baileys' built-in function
-      try {
-        const pollVotes = await getAggregateVotesInPollMessage({
-          message: pollMessageData,
-          pollUpdates: pollMessageData.updates.map(m => m.message)
-        });
-
-        console.log(`   Decrypted poll votes:`, JSON.stringify(pollVotes, null, 2));
-
-        // Find which option was selected
-        const serviceArray = [
-          'Zus Coffee - RM1.68',
-          'Beutea - RM1.68',
-          'Chagee - RM1.68',
-          'Gigi Coffee - RM1.68',
-          'Luckin Coffee - RM1.68',
-          'Tealive - RM1.68',
-          'Kenangan Coffee - RM1.68'
-        ];
-
-        const serviceNameArray = [
-          'Zus Coffee',
-          'Beutea',
-          'Chagee',
-          'Gigi Coffee',
-          'Luckin Coffee',
-          'Tealive',
-          'Kenangan Coffee'
-        ];
-
-        // Find the option with votes - check both array format and object format
-        let selectedServiceName = null;
-
-        if (Array.isArray(pollVotes)) {
-          // If it's an array, find the first non-empty entry
-          for (let i = 0; i < pollVotes.length && i < serviceNameArray.length; i++) {
-            if (pollVotes[i] && pollVotes[i].length > 0) {
-              selectedServiceName = serviceNameArray[i];
-              break;
-            }
-          }
-        } else if (typeof pollVotes === 'object') {
-          // If it's an object, check by option name
-          for (let i = 0; i < serviceArray.length; i++) {
-            const optionName = serviceArray[i];
-            const votes = pollVotes[optionName];
-
-            if (votes && votes.length > 0) {
-              selectedServiceName = serviceNameArray[i];
-              break;
-            }
-          }
-        }
-
-        if (selectedServiceName) {
-          const selectedService = SERVICES[selectedServiceName];
-          console.log(`✅ User selected: ${selectedServiceName}`);
-
-          // Clean up the poll message from storage
-          this.pollMessages.delete(pollCreationMessageKey.id);
-
-          await this.sendOrderDetails(phoneNumber, selectedService);
-          return;
-        }
-
-        console.log('⚠️ No selection found in poll votes, checking vote structure...');
-        console.log('   Vote type:', typeof pollVotes);
-        console.log('   Vote keys:', Object.keys(pollVotes));
-      } catch (decryptError) {
-        console.error('⚠️ Vote decryption failed:', decryptError.message);
-        console.log('   Falling back to simple tracking...');
-      }
-
-    } catch (error) {
-      console.error('❌ Error handling poll response:', error);
-      console.error('   Error stack:', error.stack);
     }
   }
 
