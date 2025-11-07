@@ -10,6 +10,16 @@ import { existsSync, readFileSync } from 'fs';
 
 dotenv.config();
 
+const SERVICES = {
+  'Zus Coffee': { name: 'Zus Coffee', code: 'aik', price: 'RM1.68' },
+  'Beutea': { name: 'Beutea', code: 'ot', price: 'RM1.68' },
+  'Chagee': { name: 'Chagee', code: 'bmx', price: 'RM1.68' },
+  'Gigi Coffee': { name: 'Gigi Coffee', code: 'ot', price: 'RM1.68' },
+  'Luckin Coffee': { name: 'Luckin Coffee', code: 'ot', price: 'RM1.68' },
+  'Tealive': { name: 'Tealive', code: 'avb', price: 'RM1.68' },
+  'Kenangan Coffee': { name: 'Kenangan Coffee', code: 'ot', price: 'RM1.68' }
+};
+
 class WhatsAppBot {
   constructor() {
     this.sock = null;
@@ -29,6 +39,7 @@ class WhatsAppBot {
     this.conversationState = new ConversationState();
     this.paymentImagePath = process.env.PAYMENT_IMAGE_PATH || './payment-image.jpg';
     this.paymentNames = [];
+    this.pendingNames = new Map(); // Store names temporarily before email arrives
   }
 
   async connectToWhatsApp() {
@@ -93,6 +104,12 @@ class WhatsAppBot {
                           message.message?.extendedTextMessage?.text || '';
       const messageBodyUpper = messageBody.trim().toUpperCase();
 
+      // Handle poll responses
+      if (message.message?.pollUpdateMessage) {
+        await this.handlePollResponse(message, phoneNumber);
+        return;
+      }
+
       console.log(`\n📨 Message from ${phoneNumber}:`);
       console.log(`   Body: ${messageBody}`);
 
@@ -101,50 +118,15 @@ class WhatsAppBot {
 
       switch (state.step) {
         case 'idle':
-          const template1 = `TOPUPSTATION 24HRS AUTO BOT
-ZUS VOUCHER
-BUY 1 FREE 1
-
-Supports:
-Android and IOS
-
-To make payment please reply
-:PAYMENT
-
-To contact live agent please reply
-:live agent`;
+          const template1 = `TOPUPSTATION 24HRS AUTO BOT\nVOUCHER SERVICE\n\nSupports: Android and IOS\n\nTo make payment please reply: PAYMENT\nTo contact live agent please reply: live agent`;
           await this.sendMessage(phoneNumber, template1);
           this.conversationState.setState(phoneNumber, { step: 'awaiting_payment_keyword' });
           break;
 
         case 'awaiting_payment_keyword':
           if (messageBodyUpper === 'PAYMENT' || messageBodyUpper.includes('PAYMENT')) {
-            const template2 = `ZUS COFFEE VOUCHER - RM1.68
-
-Please pay the exact number RM1.68 ONLY
-PAY MORE OR LESS YOUR PAYMENT WILL NOT PROCESS
-
-Transfer to GXBank: 018-2804099
-
-After payment please send your NAME that appeared on the transaction receipt.
-
-(Note: if you encounter the payment issue feel free to contact live agent)`;
-
-            await this.sendMessage(phoneNumber, template2);
-
-            if (existsSync(this.paymentImagePath)) {
-              try {
-                const imageBuffer = readFileSync(this.paymentImagePath);
-                await this.sock.sendMessage(phoneNumber, {
-                  image: imageBuffer,
-                  caption: 'GXBank Payment QR Code'
-                });
-              } catch (error) {
-                console.error('❌ Error sending payment image:', error.message);
-              }
-            }
-
-            this.conversationState.setState(phoneNumber, { step: 'waiting_for_payment' });
+            await this.sendServicePoll(phoneNumber);
+            this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
           }
           break;
 
@@ -152,6 +134,7 @@ After payment please send your NAME that appeared on the transaction receipt.
           const enteredName = messageBody.trim();
           console.log(`👤 Customer entered name: ${enteredName}`);
 
+          // Check if payment email already arrived
           let matchedPayment = null;
           for (const payment of this.paymentNames) {
             if (this.namesMatch(enteredName, payment.name)) {
@@ -165,7 +148,24 @@ After payment please send your NAME that appeared on the transaction receipt.
             this.paymentNames = this.paymentNames.filter(p => p !== matchedPayment);
             await this.processActivation(message, phoneNumber);
           } else {
-            await this.sendMessage(phoneNumber, '❌ No matching payment found. Please ensure:\n1. You paid exactly RM1.68\n2. You entered your name correctly as shown in the payment receipt\n\nTry again or type PAYMENT to restart.');
+            // Store name temporarily and wait for email
+            console.log(`⏳ Storing name temporarily, waiting for payment email...`);
+            const currentState = this.conversationState.getState(phoneNumber);
+            this.pendingNames.set(phoneNumber, {
+              name: enteredName,
+              service: currentState.selectedService,
+              timestamp: Date.now()
+            });
+
+            await this.sendMessage(phoneNumber, '✅ Name received! Once payment is confirmed, your number will be sent automatically.\n\nIf you already made payment 5 mins ago and you don\'t receive the number, please contact live agent.');
+
+            // Set timeout to clear pending name after 5 minutes
+            setTimeout(() => {
+              if (this.pendingNames.has(phoneNumber)) {
+                console.log(`⏰ Clearing pending name for ${phoneNumber} after 5 minutes`);
+                this.pendingNames.delete(phoneNumber);
+              }
+            }, 5 * 60 * 1000);
           }
           break;
 
@@ -206,8 +206,103 @@ After payment please send your NAME that appeared on the transaction receipt.
     }
   }
 
+  async sendServicePoll(phoneNumber) {
+    const pollMessage = await this.sock.sendMessage(phoneNumber, {
+      poll: {
+        name: 'Select Your Service',
+        values: [
+          'Zus Coffee RM1.68',
+          'Beutea RM1.68',
+          'Chagee RM1.68',
+          'Gigi Coffee RM1.68',
+          'Luckin Coffee RM1.68',
+          'Tealive RM1.68',
+          'Kenangan Coffee RM1.68'
+        ],
+        selectableCount: 1
+      }
+    });
+
+    // Store poll message key for potential deletion
+    this.conversationState.setState(phoneNumber, {
+      pollMessageKey: pollMessage.key
+    });
+  }
+
+  async handlePollResponse(message, phoneNumber) {
+    try {
+      const pollUpdate = message.message.pollUpdateMessage;
+      const votes = pollUpdate.vote || [];
+
+      if (votes.length === 0) return;
+
+      const selectedIndex = votes[0];
+      const serviceNames = Object.keys(SERVICES);
+      const selectedServiceName = serviceNames[selectedIndex];
+      const selectedService = SERVICES[selectedServiceName];
+
+      console.log(`📊 Poll response: ${selectedServiceName} (index: ${selectedIndex})`);
+
+      const currentState = this.conversationState.getState(phoneNumber);
+
+      // Delete old order details message if exists
+      if (currentState.orderMessageKey) {
+        try {
+          await this.sock.sendMessage(phoneNumber, {
+            delete: currentState.orderMessageKey
+          });
+          console.log('🗑️ Deleted old order details message');
+        } catch (error) {
+          console.log('⚠️ Could not delete old message:', error.message);
+        }
+      }
+
+      // Send new order details
+      const orderDetails = `━━━━━━━━━━━━━━━━
+Here is your order details!
+
+Name: ${selectedService.name}
+Cost: ${selectedService.price}
+
+Please pay the exact number RM1.68 ONLY
+PAY MORE OR LESS YOUR PAYMENT WILL NOT PROCESS
+
+Transfer to GXBank: 018-2804099
+
+After payment please send your FULL NAME for verification purpose
+(Note: if you encounter the payment issue feel free to contact live agent)
+━━━━━━━━━━━━━━━━`;
+
+      const orderMessage = await this.sendMessage(phoneNumber, orderDetails);
+
+      // Send payment QR image
+      if (existsSync(this.paymentImagePath)) {
+        try {
+          const imageBuffer = readFileSync(this.paymentImagePath);
+          await this.sock.sendMessage(phoneNumber, {
+            image: imageBuffer,
+            caption: 'GXBank Payment QR Code'
+          });
+        } catch (error) {
+          console.error('❌ Error sending payment image:', error.message);
+        }
+      }
+
+      // Update state with selected service and order message key
+      this.conversationState.setState(phoneNumber, {
+        step: 'waiting_for_payment',
+        selectedService: selectedService,
+        orderMessageKey: orderMessage.key
+      });
+
+    } catch (error) {
+      console.error('❌ Error handling poll response:', error);
+    }
+  }
+
   async sendMessage(jid, text) {
-    await this.sock.sendMessage(jid, { text });
+    const sentMsg = await this.sock.sendMessage(jid, { text });
+    return sentMsg;
   }
 
   namesMatch(enteredName, emailName) {
@@ -232,17 +327,25 @@ After payment please send your NAME that appeared on the transaction receipt.
       this.conversationState.setState(phoneNumber, { step: 'waiting_for_code' });
 
       const country = parseInt(process.env.SMS_ACTIVATE_COUNTRY) || 0;
-      const service = process.env.SMS_ACTIVATE_SERVICE || 'wa';
+      const selectedService = currentState.selectedService;
+      const serviceCode = selectedService.code;
       const operator = process.env.SMS_ACTIVATE_OPERATOR || null;
 
-      const numberData = await this.smsActivate.getNumber(country, service, operator);
+      console.log(`📱 Getting number for ${selectedService.name} (code: ${serviceCode})`);
 
-      const template3 = `PAYMENT VERIFIED!
+      const numberData = await this.smsActivate.getNumber(country, serviceCode, operator);
 
+      const template3 = `━━━━━━━━━━━━━━━━
+PAYMENT VERIFIED!
+
+Name: ${selectedService.name}
 NUMBER: ${numberData.number}
+
 Waiting for SMS……
-The code will sent automatically
-Note: You can change the number after 2 minutes if there is no code coming, type 'Change' for a new number`;
+The code will be sent automatically
+
+Note: You can change the number after 2 minutes if there is no code coming, type 'Change' for a new number
+━━━━━━━━━━━━━━━━`;
 
       await this.sendMessage(phoneNumber, template3);
 
@@ -255,7 +358,10 @@ Note: You can change the number after 2 minutes if there is no code coming, type
             if (state.checkCodeInterval) clearInterval(state.checkCodeInterval);
             if (state.timeoutId) clearTimeout(state.timeoutId);
 
-            await this.sendMessage(phoneNumber, `✅ Your activation code is: ${status.code}`);
+            // Send full SMS message instead of just code
+            const fullMessage = status.fullMessage || status.code;
+            await this.sendMessage(phoneNumber, `✅ SMS Received:\n\n${fullMessage}`);
+
             await this.smsActivate.releaseNumber(numberData.activationId);
             this.conversationState.resetState(phoneNumber);
           }
@@ -277,7 +383,7 @@ Note: You can change the number after 2 minutes if there is no code coming, type
       });
     } catch (error) {
       console.error('❌ Error processing activation:', error);
-      await this.sendMessage(phoneNumber, `❌ Error: ${error.message}. Please try again.`);
+      await this.sendMessage(phoneNumber, `❌ Error: ${error.message}. Please try again or contact live agent.`);
     }
   }
 
@@ -293,13 +399,37 @@ Note: You can change the number after 2 minutes if there is no code coming, type
           const expectedAmount = '1.68';
 
           if (amount === expectedAmount) {
-            this.paymentNames.push({
-              name: paymentData.name,
-              amount: amount,
-              timestamp: Date.now(),
-              emailSubject: email.subject
-            });
             console.log('✅ Payment amount verified: RM' + amount);
+
+            // Check if there's a pending name waiting for this payment
+            let matchedPending = null;
+            for (const [phoneNumber, pendingData] of this.pendingNames.entries()) {
+              if (this.namesMatch(pendingData.name, paymentData.name)) {
+                matchedPending = { phoneNumber, ...pendingData };
+                break;
+              }
+            }
+
+            if (matchedPending) {
+              // Name was stored first, process immediately
+              console.log(`⚡ Found pending name for ${paymentData.name}, processing immediately`);
+              this.pendingNames.delete(matchedPending.phoneNumber);
+
+              // Create a mock message object for processActivation
+              const mockMessage = {
+                key: { remoteJid: matchedPending.phoneNumber }
+              };
+
+              await this.processActivation(mockMessage, matchedPending.phoneNumber);
+            } else {
+              // Email arrived first, store it normally
+              this.paymentNames.push({
+                name: paymentData.name,
+                amount: amount,
+                timestamp: Date.now(),
+                emailSubject: email.subject
+              });
+            }
           } else {
             console.log(`⚠️ Payment amount mismatch: Expected RM${expectedAmount}, got RM${amount}`);
           }

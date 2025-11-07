@@ -95,16 +95,21 @@ class SMSActivate {
           api_key: this.apiKey,
           action: 'getStatus',
           id: activationId
-        }
+        },
+        responseType: 'text'
       });
 
       const data = response.data;
-      
+
       if (data.includes('STATUS_OK')) {
-        const code = data.split(':')[1];
+        const parts = data.split(':');
+        const code = parts[1];
+        // Full message is after second colon if it exists
+        const fullMessage = parts.length > 2 ? parts.slice(2).join(':') : code;
         return {
           status: 'ok',
-          code: code
+          code: code,
+          fullMessage: fullMessage
         };
       } else if (data.includes('STATUS_WAIT_CODE')) {
         return {
