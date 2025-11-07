@@ -109,6 +109,12 @@ class WhatsAppBot {
         this.processedMessages = new Set(arr.slice(-1000));
       }
 
+      // Handle poll updates (poll responses)
+      if (message.message?.pollUpdateMessage) {
+        await this.handlePollResponse(message);
+        return;
+      }
+
       await this.handleMessage(message);
     });
   }
@@ -136,56 +142,35 @@ class WhatsAppBot {
 
         case 'awaiting_payment_keyword':
           if (messageBodyUpper === 'PAYMENT' || messageBodyUpper.includes('PAYMENT')) {
-            const serviceMenu = `Please select your service by replying with the number:
+            // Send poll with 7 service options
+            const pollMessage = await this.sock.sendMessage(phoneNumber, {
+              poll: {
+                name: 'Please select your service:',
+                values: [
+                  'Zus Coffee - RM1.68',
+                  'Beutea - RM1.68',
+                  'Chagee - RM1.68',
+                  'Gigi Coffee - RM1.68',
+                  'Luckin Coffee - RM1.68',
+                  'Tealive - RM1.68',
+                  'Kenangan Coffee - RM1.68'
+                ],
+                selectableCount: 1
+              }
+            });
 
-1️⃣ Zus Coffee - RM1.68
-2️⃣ Beutea - RM1.68
-3️⃣ Chagee - RM1.68
-4️⃣ Gigi Coffee - RM1.68
-5️⃣ Luckin Coffee - RM1.68
-6️⃣ Tealive - RM1.68
-7️⃣ Kenangan Coffee - RM1.68
-
-Reply with the number (1-7)`;
-            await this.sendMessage(phoneNumber, serviceMenu);
-            this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
+            // Store poll message key for later reference
+            this.conversationState.setState(phoneNumber, {
+              step: 'awaiting_service_selection',
+              pollMessageKey: pollMessage.key
+            });
           }
           break;
 
         case 'awaiting_service_selection':
-          const selection = messageBody.trim();
-          const serviceArray = [
-            'Zus Coffee',
-            'Beutea',
-            'Chagee',
-            'Gigi Coffee',
-            'Luckin Coffee',
-            'Tealive',
-            'Kenangan Coffee'
-          ];
-
-          let selectedServiceName = null;
-
-          // Try to match by number (1-7)
-          const num = parseInt(selection);
-          if (num >= 1 && num <= 7) {
-            selectedServiceName = serviceArray[num - 1];
-          } else {
-            // Try to match by name
-            for (const serviceName of serviceArray) {
-              if (messageBodyUpper.includes(serviceName.toUpperCase())) {
-                selectedServiceName = serviceName;
-                break;
-              }
-            }
-          }
-
-          if (selectedServiceName) {
-            const selectedService = SERVICES[selectedServiceName];
-            await this.sendOrderDetails(phoneNumber, selectedService);
-          } else {
-            await this.sendMessage(phoneNumber, '❌ Invalid selection. Please reply with a number from 1-7.');
-          }
+          // This case is now handled by poll responses
+          // If user sends text message, ask them to use the poll
+          await this.sendMessage(phoneNumber, 'Please select your service from the poll above.');
           break;
 
         case 'waiting_for_payment':
@@ -261,6 +246,54 @@ Reply with the number (1-7)`;
       }
     } catch (error) {
       console.error('❌ Error handling message:', error);
+    }
+  }
+
+  async handlePollResponse(message) {
+    try {
+      const phoneNumber = message.key.remoteJid;
+      const pollUpdate = message.message.pollUpdateMessage;
+
+      console.log(`\n📊 Poll response from ${phoneNumber}`);
+      console.log(`   Poll update:`, JSON.stringify(pollUpdate, null, 2));
+
+      const state = this.conversationState.getState(phoneNumber);
+
+      // Only process poll responses when in awaiting_service_selection state
+      if (state.step !== 'awaiting_service_selection') {
+        console.log('⏭️ Ignoring poll response - not in correct state');
+        return;
+      }
+
+      // Get the vote/selected option
+      // pollUpdate contains the selected options
+      if (pollUpdate.vote && pollUpdate.vote.length > 0) {
+        const selectedIndex = pollUpdate.vote[0]; // First (and only) selection
+
+        const serviceArray = [
+          'Zus Coffee',
+          'Beutea',
+          'Chagee',
+          'Gigi Coffee',
+          'Luckin Coffee',
+          'Tealive',
+          'Kenangan Coffee'
+        ];
+
+        if (selectedIndex >= 0 && selectedIndex < serviceArray.length) {
+          const selectedServiceName = serviceArray[selectedIndex];
+          const selectedService = SERVICES[selectedServiceName];
+
+          console.log(`✅ User selected: ${selectedServiceName}`);
+          await this.sendOrderDetails(phoneNumber, selectedService);
+        } else {
+          console.log(`❌ Invalid poll selection index: ${selectedIndex}`);
+        }
+      } else {
+        console.log('⚠️ No vote found in poll update');
+      }
+    } catch (error) {
+      console.error('❌ Error handling poll response:', error);
     }
   }
 
