@@ -312,6 +312,32 @@ Get your favorite drinks vouchers with just from RM1.68 only
           break;
 
         case 'awaiting_service_selection':
+          // Check if user clicked "Voucher Details" button
+          if (interactiveId === 'btn_voucher_details') {
+            // Send interactive list to select service for voucher details
+            await this.whatsappAPI.sendListMessage(
+              phoneNumber,
+              'Select a service to view voucher details:',
+              'View Details',
+              [
+                {
+                  title: 'Services',
+                  rows: [
+                    { id: 'voucher_tealive', title: 'Tealive' },
+                    { id: 'voucher_kenangan', title: 'Kenangan Coffee' },
+                    { id: 'voucher_chagee', title: 'Chagee' },
+                    { id: 'voucher_luckin', title: 'Luckin Coffee' },
+                    { id: 'voucher_beutea', title: 'Beutea' },
+                    { id: 'voucher_gigi', title: 'Gigi Coffee' },
+                    { id: 'voucher_zus', title: 'Zus Coffee' }
+                  ]
+                }
+              ]
+            );
+            this.conversationState.setState(phoneNumber, { step: 'viewing_voucher_details' });
+            break;
+          }
+
           let selectedServiceName = null;
 
           // Check if user selected from interactive list
@@ -350,6 +376,32 @@ Get your favorite drinks vouchers with just from RM1.68 only
           break;
 
         case 'waiting_for_payment':
+          // Check if user clicked "Voucher Details" button
+          if (interactiveId === 'btn_voucher_details') {
+            // Send interactive list to select service for voucher details
+            await this.whatsappAPI.sendListMessage(
+              phoneNumber,
+              'Select a service to view voucher details:',
+              'View Details',
+              [
+                {
+                  title: 'Services',
+                  rows: [
+                    { id: 'voucher_tealive', title: 'Tealive' },
+                    { id: 'voucher_kenangan', title: 'Kenangan Coffee' },
+                    { id: 'voucher_chagee', title: 'Chagee' },
+                    { id: 'voucher_luckin', title: 'Luckin Coffee' },
+                    { id: 'voucher_beutea', title: 'Beutea' },
+                    { id: 'voucher_gigi', title: 'Gigi Coffee' },
+                    { id: 'voucher_zus', title: 'Zus Coffee' }
+                  ]
+                }
+              ]
+            );
+            this.conversationState.setState(phoneNumber, { step: 'viewing_voucher_details' });
+            break;
+          }
+
           // Check if customer is selecting a different service from the list
           if (interactiveId && SERVICE_ID_MAP[interactiveId]) {
             const newServiceName = SERVICE_ID_MAP[interactiveId];
