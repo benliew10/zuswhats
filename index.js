@@ -28,6 +28,52 @@ const SERVICE_ID_MAP = {
   'kenangan_coffee': 'Kenangan Coffee'
 };
 
+const VOUCHER_DETAILS = {
+  'Tealive': `🧋 Tealive
+
+New users who download the Tealive App can enjoy:
+🎁 RM 1.99 Lotus Biscoff Drink Voucher x1
+🎁 RM 5 per cup Voucher x5`,
+
+  'Kenangan Coffee': `☕ Kenangan Coffee
+
+New users who download the Kenangan Coffee App can enjoy:
+🎁 Buy 1 Free 1 drink voucher x2
+🎁 Rm 10 OFF voucher with min spend RM 30`,
+
+  'Chagee': `🍵 CHAGEE
+
+New users who download the CHAGEE App can enjoy:
+🎁 Buy 1 FREE 1 voucher x1
+🎁 Buy 3 FREE 1 Voucher x1
+🎁 50% OFF for White Peach Olong Milk Tea x1`,
+
+  'Luckin Coffee': `🦌 Luckin Coffee
+
+New users who download the Luckin Coffee App can enjoy:
+🎁 RM 2.99 For 1 Drink Voucher x1
+🎁 RM 3.99 For 1 Drink Voucher x1
+🎁 RM 4.99 For 1 Drink Voucher x1
+🎁 RM 5.99 For 1 Drink Voucher x1
+🎁 RM 6.99 For 1 Drink Voucher x1`,
+
+  'Beutea': `🌸 Beutea
+
+New users who download the Beutea App can enjoy:
+🎁 Buy 1 Free 1 voucher x1
+🎁 White Orchid MilkTea RM 5 OFF Voucher x2`,
+
+  'Gigi Coffee': `💛 Gigi Coffee
+
+New users who download the Gigi Coffee App can enjoy:
+🎁 Buy 1 Free 1 voucher x1`,
+
+  'Zus Coffee': `☕ ZUS Coffee
+
+New users who download the ZUS Coffee App can enjoy:
+🎁 Buy 1 Free 1 voucher x1`
+};
+
 class WhatsAppBot {
   constructor() {
     this.whatsappAPI = new WhatsAppBusinessAPI(
@@ -101,7 +147,8 @@ class WhatsAppBot {
       switch (state.step) {
         case 'idle':
         case 'awaiting_payment_keyword':
-          if (messageBodyUpper === 'PAYMENT' || messageBodyUpper.includes('PAYMENT')) {
+          // Check if user clicked "Payment" button
+          if (interactiveId === 'btn_payment' || messageBodyUpper === 'PAYMENT' || messageBodyUpper.includes('PAYMENT')) {
             // Send interactive list with service options
             await this.whatsappAPI.sendListMessage(
               phoneNumber,
@@ -123,8 +170,144 @@ class WhatsAppBot {
               ]
             );
             this.conversationState.setState(phoneNumber, { step: 'awaiting_service_selection' });
+          }
+          // Check if user clicked "Voucher Details" button
+          else if (interactiveId === 'btn_voucher_details') {
+            // Send interactive list to select service for voucher details
+            await this.whatsappAPI.sendListMessage(
+              phoneNumber,
+              'Select a service to view voucher details:',
+              'View Details',
+              [
+                {
+                  title: 'Services',
+                  rows: [
+                    { id: 'voucher_tealive', title: 'Tealive' },
+                    { id: 'voucher_kenangan', title: 'Kenangan Coffee' },
+                    { id: 'voucher_chagee', title: 'Chagee' },
+                    { id: 'voucher_luckin', title: 'Luckin Coffee' },
+                    { id: 'voucher_beutea', title: 'Beutea' },
+                    { id: 'voucher_gigi', title: 'Gigi Coffee' },
+                    { id: 'voucher_zus', title: 'Zus Coffee' }
+                  ]
+                }
+              ]
+            );
+            this.conversationState.setState(phoneNumber, { step: 'viewing_voucher_details' });
+          }
+          else {
+            // Send welcome message with buttons
+            const welcomeMessage = `Welcome to Vaocher!
+
+Get your favorite drinks vouchers with just from RM1.68 only
+
+1. Zus Coffee
+2. Chagee
+3. Beutea
+4. Tealive
+5. Kenangan Coffee
+6. Gigi Coffee
+7. Luckin Coffee`;
+
+            await this.whatsappAPI.sendButtonMessage(
+              phoneNumber,
+              welcomeMessage,
+              [
+                {
+                  type: 'reply',
+                  reply: {
+                    id: 'btn_payment',
+                    title: 'Payment'
+                  }
+                },
+                {
+                  type: 'reply',
+                  reply: {
+                    id: 'btn_voucher_details',
+                    title: 'Voucher Details'
+                  }
+                }
+              ]
+            );
+          }
+          break;
+
+        case 'viewing_voucher_details':
+          // Handle voucher detail selection
+          const voucherMap = {
+            'voucher_tealive': 'Tealive',
+            'voucher_kenangan': 'Kenangan Coffee',
+            'voucher_chagee': 'Chagee',
+            'voucher_luckin': 'Luckin Coffee',
+            'voucher_beutea': 'Beutea',
+            'voucher_gigi': 'Gigi Coffee',
+            'voucher_zus': 'Zus Coffee'
+          };
+
+          if (interactiveId && voucherMap[interactiveId]) {
+            const serviceName = voucherMap[interactiveId];
+            const voucherDetail = VOUCHER_DETAILS[serviceName];
+
+            await this.sendMessage(phoneNumber, voucherDetail);
+
+            // Send welcome message again with buttons
+            setTimeout(async () => {
+              const welcomeMessage = `Welcome to Vaocher!
+
+Get your favorite drinks vouchers with just from RM1.68 only
+
+1. Zus Coffee
+2. Chagee
+3. Beutea
+4. Tealive
+5. Kenangan Coffee
+6. Gigi Coffee
+7. Luckin Coffee`;
+
+              await this.whatsappAPI.sendButtonMessage(
+                phoneNumber,
+                welcomeMessage,
+                [
+                  {
+                    type: 'reply',
+                    reply: {
+                      id: 'btn_payment',
+                      title: 'Payment'
+                    }
+                  },
+                  {
+                    type: 'reply',
+                    reply: {
+                      id: 'btn_voucher_details',
+                      title: 'Voucher Details'
+                    }
+                  }
+                ]
+              );
+            }, 500);
+
+            this.conversationState.setState(phoneNumber, { step: 'idle' });
           } else {
-            await this.sendMessage(phoneNumber, '━━━━━━━━━━━━━━━━\n👋 Welcome!\n\nPlease reply "PAYMENT" to start the process.\n━━━━━━━━━━━━━━━━');
+            // If they didn't select from list, send the list again
+            await this.whatsappAPI.sendListMessage(
+              phoneNumber,
+              'Please select a service to view voucher details:',
+              'View Details',
+              [
+                {
+                  title: 'Services',
+                  rows: [
+                    { id: 'voucher_tealive', title: 'Tealive' },
+                    { id: 'voucher_kenangan', title: 'Kenangan Coffee' },
+                    { id: 'voucher_chagee', title: 'Chagee' },
+                    { id: 'voucher_luckin', title: 'Luckin Coffee' },
+                    { id: 'voucher_beutea', title: 'Beutea' },
+                    { id: 'voucher_gigi', title: 'Gigi Coffee' },
+                    { id: 'voucher_zus', title: 'Zus Coffee' }
+                  ]
+                }
+              ]
+            );
           }
           break;
 

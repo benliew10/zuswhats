@@ -32,6 +32,37 @@ class WhatsAppBusinessAPI {
     }
   }
 
+  async sendButtonMessage(to, bodyText, buttons) {
+    try {
+      const response = await axios.post(
+        `${this.baseUrl}/${this.phoneNumberId}/messages`,
+        {
+          messaging_product: 'whatsapp',
+          to: to,
+          type: 'interactive',
+          interactive: {
+            type: 'button',
+            body: { text: bodyText },
+            action: {
+              buttons: buttons
+            }
+          }
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.accessToken}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      console.log(`✅ Button message sent to ${to}`);
+      return response.data;
+    } catch (error) {
+      console.error('❌ Error sending button message:', error.response?.data || error.message);
+      throw error;
+    }
+  }
+
   async sendListMessage(to, bodyText, buttonText, sections) {
     try {
       const response = await axios.post(
